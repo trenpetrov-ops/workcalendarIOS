@@ -1,13 +1,15 @@
 // service-worker.js
-const CACHE_NAME = 'workcalendar-v1';
+const CACHE_NAME = 'trainer-calendar-v1';
 const urlsToCache = [
-  '/',
-  '/index.html',
-  '/style.css',
-  '/app.js',
-  '/firebase.js',
-  '/manifest.json'
+  '/workcalendar/',
+  '/workcalendar/index.html',
+  '/workcalendar/style.css',
+  '/workcalendar/app.js',
+  '/workcalendar/manifest.json',
+  '/workcalendar/icons/icon-192.png',
+  '/workcalendar/icons/icon-512.png'
 ];
+
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
