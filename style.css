@@ -39,13 +39,15 @@ button:hover {
 }
 
 .btn-red {
-  background: #ef4444;
+  background: #cf4343;
   color: #ffffff;
 }
 
 .btn-green {
-  background: #16a34a;
+  background: #0eab48;
   color: #ffffff;
+  padding: 6px 27px;
+  margin-bottom: 11px;
 }
 
 /* Заголовок */
@@ -68,15 +70,18 @@ table {
 
 th,
 td {
-  border: 1px solid #d1d5db;
+  /* border: 1px solid #d1d5db; */
   padding: 2px 2px;
   text-align: center;
   position: relative;
+  border-bottom: 1px solid #d1d5db;
+  border-left: 1px solid #d1d5db;
 }
 
 thead th {
   font-weight: 600;
   font-size: 9px;
+  height: 35px;
 }
 
 td.time-cell {
@@ -106,7 +111,7 @@ th.bg-yellow, .bg-gray {
 }
 
 .bg-orange {
-  background-color: #fff7ed;
+  background-color: #f7f7f7;
 }
 
 .weekend-col {
@@ -117,7 +122,7 @@ th.bg-yellow, .bg-gray {
 
 .cell-clickable {
   cursor: pointer;
-  height: 23px;
+  height: 24px;
 }
 
 /* Бронирования */
@@ -176,11 +181,11 @@ th.bg-yellow, .bg-gray {
 
 .client-panel {
   margin-top: 16px;
-  padding: 8px;
+  padding: 17px 9px;
   border-radius: 6px;
   border: 1px solid #d1d5db;
   background-color: #f9fafb;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .client-panel-header {
@@ -196,7 +201,8 @@ th.bg-yellow, .bg-gray {
 .client-card {
   border-radius: 6px;
   border: 1px solid #e5e7eb;
-  padding: 6px;
+  border-bottom: 2px solid #e5e7eb;
+  padding: 9px 14px;
   background-color: #ffffff;
   margin-bottom: 6px;
 }
@@ -205,6 +211,7 @@ th.bg-yellow, .bg-gray {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  padding: 2px 0px;
 }
 
 .client-name {
@@ -212,51 +219,67 @@ th.bg-yellow, .bg-gray {
 }
 
 .client-status {
-  font-size: 10px;
+  font-size: 11px;
   color: #6b7280;
+  padding-left: 4px;
+  font-weight: 500;
 }
 
 .client-actions {
   display: flex;
-  gap: 6px;
+  gap: 39px;
   align-items: center;
 }
 
 .client-actions button {
   font-size: 9px;
-  padding: 2px 4px;
+  padding: 6px 10px;
 }
 
 /* Пакеты */
 
 .package-details {
-  margin-top: 4px;
+  margin-top: 0px;
   margin-left: 10px;
-  font-size: 10px;
+  font-size: 12px;
   color: #4b5563;
+  padding-top: 0px;
 }
 
 .package-line {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 4px;
+  gap: 1px;
+  margin-bottom: 5px;
+  font-weight: 500;
+  margin-top: 11px;
+  flex-direction: row;
+  justify-content: space-between;
 }
-
+span.text-gray {
+    padding-left: 5px;
+    font-weight: 400;
+    font-size: 11px;
+}
 .package-remove-btn {
-  font-size: 9px;
+  font-size: 11px;
   color: #ef4444;
   background: transparent;
   padding: 0;
+  font-weight: 600;
 }
 
 /* Список тренировок пакета */
 
 .package-sessions {
+  display: flex;
   margin-top: 3px;
-  margin-left: 14px;
-  font-size: 9px;
+  margin-left: 19px;
+  font-size: 12px;
   color: #6b7280;
+  gap: 3px;
+  flex-direction: column;
+  margin-bottom: 5px;
 }
 
 /* Модальные окна */
@@ -322,6 +345,8 @@ th.bg-yellow, .bg-gray {
   width: 100%;
   overflow: hidden;
   position: relative;
+  border-radius: 6px;
+  border: 1px solid #dfdfdf;
 }
 
 /* Левая часть — фиксированные 2 столбца */
@@ -344,12 +369,13 @@ th.bg-yellow, .bg-gray {
 
 .fixed-time-table th,
 .fixed-time-table td {
-  border: 1px solid #d1d5db;
+  /* border: 1px solid #d1d5db; */
   text-align: center;
   font-size: 6px;
   padding: 2px;
-  height: 23px;
-  /* border-right: none; */
+  height: 24px;
+  border-right: 1px solid #d1d5db;
+  border-bottom: 1px solid #d1d5db;
 }
 
 /* Правая часть — сам календарь (7 дней) */
@@ -370,7 +396,7 @@ th.bg-yellow, .bg-gray {
   display: flex;
   width: 300%;
   transform: translateX(-33.333%);
-  transition: transform 0.4s ease-out;
+  transition: transform 1s ease-out;
   will-change: transform;
 }
 
@@ -391,4 +417,70 @@ th.bg-yellow, .bg-gray {
 .calendar-scroll-inner table {
   width: 100%;
   table-layout: fixed;
+}
+
+
+
+
+
+/* === Нижнее меню === */
+.bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  display: flex;
+  justify-content: space-around;
+  background: white;
+  border-top: 1px solid #ccc;
+  padding: 8px 0;
+  z-index: 999;
+}
+
+.nav-btn {
+  flex: 1;
+  background: none;
+  border: none;
+  font-size: 16px;
+  color: #666;
+  padding: 10px 0;
+  transition: color 0.2s, background 0.2s;
+}
+
+.nav-btn.active {
+  color: #0078d7;
+  font-weight: bold;
+}
+
+.nav-btn:active {
+  background: rgba(0,0,0,0.05);
+}
+/* === нав бар === */
+.active-clients-bar {
+  background: #f9f9f9;
+  padding: 10px;
+  margin-top: 11px;
+}
+
+.client-progress {
+  margin-bottom: 10px;
+}
+
+.client-progress-label {
+  font-size: 12px;
+  margin-bottom: 4px;
+  font-weight: 500;
+}
+
+.client-progress-bar {
+  height: 4px;
+  background: #e5e5e5;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.client-progress-fill {
+  height: 100%;
+  background: #4989dcf2;
+  border-radius: 3px;
 }
