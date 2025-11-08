@@ -359,21 +359,29 @@ th.bg-yellow, .bg-gray {
   position: relative;
 }
 
-/* Свайп контейнер */
 .calendar-scroll {
   overflow: hidden;
   position: relative;
+  width: 100%;
   touch-action: pan-y;
-  -webkit-overflow-scrolling: touch;
 }
 
 .calendar-scroll-inner {
   display: flex;
-  width: 299%;
+  width: 300%;
   transform: translateX(-33.333%);
-  /* transition: transform 0.25s ease-out; */
+  transition: transform 0.4s ease-out;
+  will-change: transform;
 }
 
+.calendar-week {
+  flex: 0 0 33.333%;
+  width: 33.333%;
+  min-width: 33.333%;
+  background: white;
+  box-sizing: border-box;
+  padding: 2px;
+}
 /* Пружинка при перетягивании */
 .calendar-scroll.dragging {
   transition: none;

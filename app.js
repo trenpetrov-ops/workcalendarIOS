@@ -253,57 +253,91 @@ function initGlobalHandlers() {
   });
 
  // ===== Свайп по календарю для смены недели =====
+// ===== Свайп по календарю для смены недели =====
 
- let swipeX = 0;
- let startX = 0;
- let isDragging = false;
+let swipeX = 0;
+let startX = 0;
+let isDragging = false;
 
- document.addEventListener("touchstart", (e) => {
-   const zone = e.target.closest(".calendar-scroll-inner");
-   if (!zone) return;
-   isDragging = true;
-   startX = e.touches[0].clientX;
-   zone.style.transition = "none";
- });
+document.addEventListener("touchstart", (e) => {
+  const zone = e.target.closest(".calendar-scroll-inner");
+  if (!zone) return;
+  isDragging = true;
+  startX = e.touches[0].clientX;
+  zone.style.transition = "none";
+});
 
- document.addEventListener("touchmove", (e) => {
-   if (!isDragging) return;
-   const zone = document.querySelector(".calendar-scroll-inner");
-   swipeX = e.touches[0].clientX - startX;
-   zone.style.transform = `translateX(calc(-33.333% + ${swipeX}px))`;
- });
+document.addEventListener("touchmove", (e) => {
+  if (!isDragging) return;
+  const zone = document.querySelector(".calendar-scroll-inner");
+  swipeX = e.touches[0].clientX - startX;
+  // сохраняем центральную неделю, добавляем подглядывание соседней
+  zone.style.transform = `translateX(calc(-33.333% + ${swipeX}px))`;
+});
 
- document.addEventListener("touchend", () => {
-   if (!isDragging) return;
-   isDragging = false;
-   const zone = document.querySelector(".calendar-scroll-inner");
+document.addEventListener("touchend", () => {
+  if (!isDragging) return;
+  isDragging = false;
+  const zone = document.querySelector(".calendar-scroll-inner");
+  if (!zone) return;
 
-   // ——— Новый плавный "айфоновский" эффект
-   if (swipeX < -80) {
-     state.anchorDate = addWeeks(state.anchorDate, 1);
-     render();
-     zone.style.transform = "translateX(-60px)";
-     requestAnimationFrame(() => {
-       zone.style.transition = "transform 1.3s cubic-bezier(0.05, 0.8, 0, 1)";
-       zone.style.transform = "";
-     });
-   } else if (swipeX > 80) {
-     state.anchorDate = subWeeks(state.anchorDate, 1);
-     render();
-     zone.style.transform = "translateX(60px)";
-     requestAnimationFrame(() => {
-       zone.style.transition = "transform 1.3s cubic-bezier(0.05, 0.8, 0, 1)";
-       zone.style.transform = "";
-     });
-   } else {
-     zone.style.transition = "transform 1.2s cubic-bezier(0.1, 0.85, 0, 1)";
-     zone.style.transform = "";
-   }
+  const THRESHOLD = 90; // порог в пикселях
+  const ANIM_SPEED = 0.85; // скорость плавного вставания
+  const EASING = "cubic-bezier(0.08, 0.9, 0.15, 1)"; // мягкий айфоновский easing
 
-   swipeX = 0;
-   closeAllTransient();
- });
+  if (swipeX < -THRESHOLD) {
+    // Свайп влево → следующая неделя
+    zone.style.transition = `transform 0.35s ${EASING}`;
+    zone.style.transform = "translateX(-66.666%)"; // уходит влево
 
+    zone.addEventListener("transitionend", function next() {
+      zone.removeEventListener("transitionend", next);
+
+      state.anchorDate = addWeeks(state.anchorDate, 1);
+      render();
+
+      const newZone = document.querySelector(".calendar-scroll-inner");
+      if (!newZone) return;
+
+      newZone.style.transition = "none";
+      newZone.style.transform = "translateX(0%)"; // новая неделя справа
+
+      requestAnimationFrame(() => {
+        newZone.style.transition = `transform ${ANIM_SPEED}s ${EASING}`;
+        newZone.style.transform = "translateX(-33.333%)"; // плавно центр
+      });
+    });
+  } else if (swipeX > THRESHOLD) {
+    // Свайп вправо → предыдущая неделя
+    zone.style.transition = `transform 0.35s ${EASING}`;
+    zone.style.transform = "translateX(0%)"; // уходит вправо
+
+    zone.addEventListener("transitionend", function next() {
+      zone.removeEventListener("transitionend", next);
+
+      state.anchorDate = subWeeks(state.anchorDate, 1);
+      render();
+
+      const newZone = document.querySelector(".calendar-scroll-inner");
+      if (!newZone) return;
+
+      newZone.style.transition = "none";
+      newZone.style.transform = "translateX(-66.666%)"; // новая неделя слева
+
+      requestAnimationFrame(() => {
+        newZone.style.transition = `transform ${ANIM_SPEED}s ${EASING}`;
+        newZone.style.transform = "translateX(-33.333%)"; // плавно центр
+      });
+    });
+  } else {
+    // Недотянул — просто вернуться
+    zone.style.transition = `transform ${ANIM_SPEED}s ${EASING}`;
+    zone.style.transform = "translateX(-33.333%)";
+  }
+
+  swipeX = 0;
+  closeAllTransient();
+});
 
 
 
