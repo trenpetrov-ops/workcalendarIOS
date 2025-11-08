@@ -109,6 +109,10 @@ const state = {
   }
 };
 
+
+// ---------- Навигация ----------
+let currentPage = "calendar"; // текущая страница: "calendar" или "clients"
+
 // ---------- Инициализация ----------
 document.addEventListener("DOMContentLoaded", () => {
   initFirestoreSubscriptions();
@@ -282,8 +286,8 @@ document.addEventListener("touchend", () => {
   if (!zone) return;
 
   const THRESHOLD = 90; // порог в пикселях
-  const ANIM_SPEED = 0.85; // скорость плавного вставания
-  const EASING = "cubic-bezier(0.08, 0.9, 0.15, 1)"; // мягкий айфоновский easing
+  const ANIM_SPEED = 0.3; // скорость плавного вставания
+  const EASING = "cubic-bezier(0.5, 0.9, 0.9, 0.8)"; // мягкий айфоновский easing
 
   if (swipeX < -THRESHOLD) {
     // Свайп влево → следующая неделя
@@ -419,15 +423,27 @@ function render() {
   const app = document.getElementById("app");
   if (!app) return;
 
-  app.innerHTML = `
-    ${renderHeader()}
-    ${renderTable()}
-    ${renderClientsPanel()}
-    ${state.modalOpen ? renderAddBookingModal() : ""}
-    ${state.packageModalOpen ? renderPackageModal() : ""}
-    ${state.confirm.open ? renderConfirmModal() : ""}
-  `;
+  if (currentPage === "calendar") {
+    app.innerHTML = `
+      ${renderHeader()}
+      ${renderTable()}
+      ${renderActiveClientsBar()}  <!-- вот этот новый короткий блок -->
+      ${state.modalOpen ? renderAddBookingModal() : ""}
+      ${state.packageModalOpen ? renderPackageModal() : ""}
+      ${state.confirm.open ? renderConfirmModal() : ""}
+    `;
+  }
+
+  if (currentPage === "clients") {
+    app.innerHTML = `
+      ${renderClientsPanel()}  <!-- полностью твой старый блок -->
+      ${state.packageModalOpen ? renderPackageModal() : ""}
+      ${state.confirm.open ? renderConfirmModal() : ""}
+    `;
+  }
 }
+
+
 
 function renderHeader() {
   return `
@@ -1013,4 +1029,46 @@ getDocs(collection(db, "packages"))
   });
 
 
+// ---- переключение страниц ----
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-page]");
+  if (!btn) return;
 
+  document.querySelectorAll(".nav-btn").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+
+  currentPage = btn.dataset.page;
+  render();
+});
+
+
+// ---- панель под календарем ----
+function renderActiveClientsBar() {
+  const active = activeClients();
+  if (active.length === 0) return "";
+
+  let html = `<div class="active-clients-bar">`;
+
+  active.forEach((name) => {
+    const pkg = packages.find(
+      (p) =>
+        (p.clientName === name ||
+          (Array.isArray(p.clientNames) && p.clientNames.includes(name))) &&
+        (p.used || 0) < p.size
+    );
+    if (!pkg) return;
+
+    const progress = ((pkg.used || 0) / pkg.size) * 100;
+    html += `
+      <div class="client-progress">
+        <div class="client-progress-label">${escapeHtml(name)} — ${pkg.used}/${pkg.size}</div>
+        <div class="client-progress-bar">
+          <div class="client-progress-fill" style="width:${progress}%"></div>
+        </div>
+      </div>
+    `;
+  });
+
+  html += `</div>`;
+  return html;
+}
