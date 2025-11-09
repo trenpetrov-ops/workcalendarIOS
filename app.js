@@ -276,6 +276,9 @@ document.addEventListener("touchstart", (e) => {
   targetEl = e.target.closest(".cell-clickable, .booking-item");
   if (!targetEl) return;
 
+  // 👇 Добавляем класс для визуального эффекта
+  targetEl.classList.add("long-pressing");
+
   longPressTimer = setTimeout(() => {
     const cell = targetEl.closest(".cell-clickable");
     const booking = targetEl.closest(".booking-item");
@@ -291,6 +294,29 @@ document.addEventListener("touchstart", (e) => {
     }
   }, LONG_PRESS_MS);
 }, { passive: false });
+
+document.addEventListener("touchmove", (e) => {
+  if (!longPressTimer) return;
+  const t = e.touches[0];
+  const dx = Math.abs(t.clientX - lpStartX);
+  const dy = Math.abs(t.clientY - lpStartY);
+
+  if (dx > MOVE_TOLERANCE || dy > MOVE_TOLERANCE) {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+    document.querySelectorAll(".long-pressing").forEach(el => el.classList.remove("long-pressing"));
+  }
+}, { passive: true });
+
+document.addEventListener("touchend", () => {
+  if (longPressTimer) {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+  }
+  // 👇 Убираем эффект
+  document.querySelectorAll(".long-pressing").forEach(el => el.classList.remove("long-pressing"));
+}, { passive: true });
+
 
 document.addEventListener("touchmove", (e) => {
   if (!longPressTimer) return;
@@ -1243,4 +1269,7 @@ function truncateName(name, max = 8) {
   if (!name) return "";
   return name.length > max ? name.slice(0, max) + "…" : name;
 }
+
+
+
 
