@@ -47,12 +47,14 @@ function format(date, pattern) {
   if (!(date instanceof Date) || isNaN(date)) return "";
   const options = {};
   switch (pattern) {
+    case "d":
+      options.day = "numeric";
+      break;
     case "d MMM":
       options.day = "numeric";
       options.month = "short";
       break;
     case "yyyy-MM-dd":
-      // Форматируем в локальном времени (а не UTC)
       const y = date.getFullYear();
       const m = String(date.getMonth() + 1).padStart(2, "0");
       const d = String(date.getDate()).padStart(2, "0");
@@ -70,6 +72,7 @@ function format(date, pattern) {
     .format(date)
     .replace(/\.$/, "");
 }
+
 // ---------- Фиктивная "локаль" ru ----------
 const ru = {
   code: "ru",
@@ -144,97 +147,7 @@ const swipe = {
 
 // ---------- Обработчики событий ----------
 function initGlobalHandlers() {
-  document.body.addEventListener("click", (e) => {
-    const el = e.target.closest("[data-action]");
-    if (!el) return;
-    const action = el.dataset.action;
 
-    switch (action) {
-      case "prev-week":
-        state.anchorDate = subWeeks(state.anchorDate, 1);
-        closeAllTransient();
-        render();
-        break;
-      case "next-week":
-        state.anchorDate = addWeeks(state.anchorDate, 1);
-        closeAllTransient();
-        render();
-        break;
-      case "today":
-        state.anchorDate = new Date();
-        closeAllTransient();
-        render();
-        break;
-
-      case "open-add-booking":
-        openAddBookingModal(el.dataset.date, parseInt(el.dataset.hour, 10));
-        break;
-      case "close-add-booking":
-        state.modalOpen = false;
-        render();
-        break;
-      case "save-booking":
-        addBooking();
-        break;
-
-      case "select-booking":
-        toggleSelectedBooking(el.dataset.id);
-        break;
-      case "confirm-delete-booking":
-        openConfirmDeleteBooking(el.dataset.id);
-        break;
-
-      case "confirm-cancel":
-        state.confirm = { open: false, title: "", type: null, bookingId: null };
-        render();
-        break;
-      case "confirm-ok":
-        handleConfirmOk();
-        break;
-
-      case "open-package-modal-main":
-        openPackageModal("");
-        break;
-      case "open-package-modal-client":
-        openPackageModal(el.dataset.client || "");
-        break;
-      case "close-package-modal":
-        state.packageModalOpen = false;
-        render();
-        break;
-      case "save-package":
-        savePackage();
-        break;
-
-      case "toggle-client-expand":
-        toggleClientExpand(el.dataset.client);
-        break;
-      case "toggle-package-expand":
-        togglePackageExpand(el.dataset.pid);
-        break;
-
-      case "remove-package":
-        requestRemovePackage(el.dataset.client, el.dataset.pid);
-        break;
-      case "remove-client":
-        requestRemoveClient(el.dataset.client);
-        break;
-
-        case "overlay-click":
-          if (e.target.classList.contains("modal-overlay")) {
-            // закрываем только если кликнули по фону, а не по внутренним элементам
-            state.modalOpen = false;
-            state.packageModalOpen = false;
-            state.confirm.open = false;
-            render();
-          }
-  break;
-
-
-      default:
-        break;
-    }
-  });
 
 
 
@@ -285,7 +198,7 @@ document.addEventListener("touchend", () => {
   const zone = document.querySelector(".calendar-scroll-inner");
   if (!zone) return;
 
-  const THRESHOLD = 90; // порог в пикселях
+  const THRESHOLD = 60; // порог в пикселях
   const ANIM_SPEED = 0.3; // скорость плавного вставания
   const EASING = "cubic-bezier(0.5, 0.9, 0.9, 0.8)"; // мягкий айфоновский easing
 
@@ -345,8 +258,74 @@ document.addEventListener("touchend", () => {
 
 
 
+// ======== Долгое нажатие для добавления / удаления ========
+
+// ======== Долгое нажатие для добавления / удаления ========
+
+const LONG_PRESS_MS = 500;
+const MOVE_TOLERANCE = 10;
+let longPressTimer = null;
+let lpStartX = 0, lpStartY = 0;
+let targetEl = null;
+
+document.addEventListener("touchstart", (e) => {
+  const t = e.touches[0];
+  lpStartX = t.clientX;
+  lpStartY = t.clientY;
+
+  targetEl = e.target.closest(".cell-clickable, .booking-item");
+  if (!targetEl) return;
+
+  longPressTimer = setTimeout(() => {
+    const cell = targetEl.closest(".cell-clickable");
+    const booking = targetEl.closest(".booking-item");
+
+    if (cell && cell.dataset.date && cell.dataset.hour) {
+      // ✳️ Добавление
+      openAddBookingModal(cell.dataset.date, parseInt(cell.dataset.hour, 10));
+    }
+
+    if (booking && booking.dataset.id) {
+      // ✳️ Удаление
+      openConfirmDeleteBooking(booking.dataset.id);
+    }
+  }, LONG_PRESS_MS);
+}, { passive: false });
+
+document.addEventListener("touchmove", (e) => {
+  if (!longPressTimer) return;
+  const t = e.touches[0];
+const dx = Math.abs(t.clientX - lpStartX);
+const dy = Math.abs(t.clientY - lpStartY);
+
+  if (dx > MOVE_TOLERANCE || dy > MOVE_TOLERANCE) {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+  }
+}, { passive: true });
+
+document.addEventListener("touchend", () => {
+  if (longPressTimer) {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+  }
+}, { passive: true });
+
+// 🔒 Запрещаем системное меню (iOS, Android, desktop)
+document.addEventListener("contextmenu", e => e.preventDefault());
+
+
 
 }
+
+
+
+
+// 🔒 Отключаем стандартное контекстное меню
+document.addEventListener("contextmenu", (e) => {
+  e.preventDefault();
+});
+
 
 // ---------- Вспомогательные ----------
 function closeAllTransient() {
@@ -364,13 +343,15 @@ function weekDays(baseDate) {
 const HOURS = Array.from({ length: 15 }, (_, i) => 9 + i);
 
 function formatHourForTH(hour) {
-  return `${String(hour).padStart(2, "0")}:00`;
+  return `<span class="time-label">${hour}<span class="dot">.</span>00</span>`;
 }
 
 function formatHourForRU(thHour) {
   const ruHour = (thHour + 24 - 4) % 24;
-  return `${String(ruHour).padStart(2, "0")}:00`;
+  return `<span class="time-label">${ruHour}<span class="dot">.</span>00</span>`;
 }
+
+
 
 function clientNames() {
   const all = [];
@@ -446,14 +427,39 @@ function render() {
 
 
 function renderHeader() {
+  const start = startOfWeekFor(state.anchorDate);
+  const end = addDays(start, 6);
+
+  // Проверяем, один ли месяц в этой неделе
+  const startMonth = start.toLocaleString("ru-RU", { month: "long" });
+  const endMonth = end.toLocaleString("ru-RU", { month: "long" });
+  const year = start.getFullYear();
+
+  // Если неделя пересекает границу месяцев → показываем оба
+  const monthLabel =
+    startMonth === endMonth
+      ? `${startMonth[0].toUpperCase() + startMonth.slice(1)} ${year}`
+      : `${startMonth[0].toUpperCase() + startMonth.slice(1)} – ${
+          endMonth[0].toUpperCase() + endMonth.slice(1)
+        } ${year}`;
+
   return `
-    <header>
-      <button data-action="prev-week">←</button>
-      <button data-action="today">Сегодня</button>
-      <button data-action="next-week">→</button>
+    <header class="calendar-header">
+      <div class="calendar-header-left">
+        <span class="month-label">${monthLabel}</span>
+      </div>
+      <div class="calendar-header-right">
+
+        <button data-action="today">  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <circle cx="12" cy="12" r="3"></circle>
+                                        <path d="M12 2v2m0 16v2m10-10h-2M4 12H2"></path>
+                                      </svg></button>
+
+      </div>
     </header>
   `;
 }
+
 
 
 
@@ -469,16 +475,18 @@ function renderWeek(offset) {
 
   let html = `<table><thead><tr>`;
 
-  week.forEach((day, idx) => {
-    const dateStr = format(day, "d MMM", { locale: ru }).replace(/\./g, "");
-    const weekday = ruShort[day.getDay()];
-    const isWeekend = idx >= 5;
-    html += `
-      <th class="${isWeekend ? "bg-orange" : "bg-red"}">
-        <div>${dateStr}</div>
-        <div><strong>${weekday}</strong></div>
-      </th>`;
-  });
+week.forEach((day, idx) => {
+  const dateStr = format(day, "d"); // ← только число
+  const weekday = ruShort[day.getDay()];
+  const isWeekend = idx >= 5;
+
+  html += `
+    <th class="${isWeekend ? "bg-orange" : "bg-red"}">
+      <span class="date">${dateStr}</span>
+      <span class="weekday">${weekday}</span>
+    </th>`;
+});
+
 
   html += `</tr></thead><tbody>`;
 
@@ -501,21 +509,12 @@ function renderWeek(offset) {
       } else {
         html += `<td class="bg-blue"><div class="booking-wrap">`;
         items.forEach((b) => {
-          const selected = state.selectedBookingId === b.id;
-          html += `
-            <div class="booking-item"
-                 data-action="select-booking"
-                 data-id="${b.id}">
-              <div class="booking-name">${escapeHtml(b.clientName)}</div>
-              <div class="booking-session">${b.sessionNumber || ""}</div>
-              ${
-                selected
-                  ? `<div class="booking-delete-overlay"
-                           data-action="confirm-delete-booking"
-                           data-id="${b.id}">✕</div>`
-                  : ""
-              }
-            </div>`;
+html += `
+  <div class="booking-item" data-id="${b.id}">
+    <div class="booking-name">${escapeHtml(b.clientName)}</div>
+    <div class="booking-session">${b.sessionNumber || ""}</div>
+  </div>`;
+
         });
         html += `</div></td>`;
       }
@@ -799,7 +798,6 @@ async function addBooking() {
 
   // Теперь пересчитываем номера тренировок пакета
   await reindexPackageSessions(targetPkg.id);
-
   state.modalOpen = false;
   render();
 }
@@ -823,62 +821,119 @@ function openConfirmDeleteBooking(id) {
 
 function renderConfirmModal() {
   return `
-    <div class="modal-overlay" data-action="confirm-cancel">
-      <div class="modal">
-        <h3>${escapeHtml(state.confirm.title || "")}</h3>
+    <div class="modal-overlay" data-action="overlay-click">
+      <div class="modal" data-role="confirm-modal">
+        <h3>${escapeHtml(state.confirm.title || "Удалить запись?")}</h3>
         <div class="modal-actions">
           <button class="btn-gray" data-action="confirm-cancel">Отмена</button>
-          <button class="btn-red" data-action="confirm-ok">Удалить</button>
+          <button class="btn-red"
+                  data-action="confirm-ok"
+                  data-id="${state.confirm.bookingId || ''}">
+            Удалить
+          </button>
         </div>
       </div>
     </div>
   `;
 }
 
-function handleConfirmOk() {
-  if (state.confirm.type === "booking" && state.confirm.bookingId) {
-    const id = state.confirm.bookingId;
+
+
+
+async function handleConfirmOk(e) {
+  // Если функцию вызвали не напрямую из события, пробуем взять event из window
+  const event = e || window._lastClickEvent;
+  const btn = event?.target?.closest("[data-id]");
+  const id = btn?.dataset.id || state.confirm.bookingId;
+
+  console.log("✅ confirm-ok clicked", { id, state: state.confirm });
+
+  if (!id) {
+    console.warn("⚠️ Нет bookingId");
     state.confirm = { open: false, title: "", type: null, bookingId: null };
-    state.selectedBookingId = null;
-    deleteBookingAndReindex(id);
     render();
+    return;
+  }
+
+  // Закрываем модалку
+  state.confirm = { open: false, title: "", type: null, bookingId: null };
+  render();
+
+  try {
+    await deleteBookingAndReindex(id);
+    console.log("🗑 Удалено бронирование:", id);
+  } catch (err) {
+    console.error("❌ Ошибка при удалении:", err);
+    alert("Ошибка удаления, см. консоль");
   }
 }
 
+
+
+
 // Пересчёт номеров после удаления
 async function deleteBookingAndReindex(id) {
+  console.log("🗑 Пытаюсь удалить бронь", id);
+
   const b = bookings.find((x) => x.id === id);
-  if (!b) return;
+  if (!b) {
+    console.warn("⚠️ Бронь с таким id не найдена в локальном массиве", id);
+    return;
+  }
 
-  await deleteDoc(doc(db, "bookings", id));
+  // 1. Удаляем саму бронь
+  try {
+    await deleteDoc(doc(db, "bookings", id));
+    console.log("✅ Бронь удалена из Firestore");
+  } catch (err) {
+    console.error("❌ Ошибка удаления брони:", err);
+    alert("Ошибка удаления записи (см. консоль).");
+    return;
+  }
 
-  // Получаем оставшиеся брони этого пакета
-  const q = query(
-    collection(db, "bookings"),
-    where("packageId", "==", b.packageId)
-  );
-  const snap = await getDocs(q);
-  const remaining = snap.docs
-    .map((d) => ({ id: d.id, ...d.data() }))
-    .sort(
-      (a, c) =>
-        a.dateISO.localeCompare(c.dateISO) || (a.hour || 0) - (c.hour || 0)
+  // 2. Если у брони нет packageId — просто выходим
+  if (!b.packageId) {
+    console.log("ℹ️ У брони нет packageId — пересчёт пакета пропускаем");
+    return;
+  }
+
+  // 3. Пересчитываем оставшиеся тренировки пакета
+  try {
+    const q = query(
+      collection(db, "bookings"),
+      where("packageId", "==", b.packageId)
+    );
+    const snap = await getDocs(q);
+
+    const remaining = snap.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .sort(
+        (a, c) =>
+          a.dateISO.localeCompare(c.dateISO) ||
+          (a.hour || 0) - (c.hour || 0)
+      );
+
+    // перенумеровываем сессии
+    await Promise.all(
+      remaining.map((item, idx) =>
+        updateDoc(doc(db, "bookings", item.id), {
+          sessionNumber: idx + 1
+        })
+      )
     );
 
-  // Перенумеровываем
-  await Promise.all(
-    remaining.map((item, idx) =>
-      updateDoc(doc(db, "bookings", item.id), {
-        sessionNumber: idx + 1
-      })
-    )
-  );
+    // обновляем used в пакете
+    await updateDoc(doc(db, "packages", b.packageId), {
+      used: remaining.length
+    });
 
-  // Обновляем used
-  await updateDoc(doc(db, "packages", b.packageId), {
-    used: remaining.length
-  });
+    console.log("✅ Пересчёт пакета завершён");
+  } catch (err) {
+    console.error("❌ Ошибка пересчёта пакета:", err);
+    // тут НЕ падаем, запись уже удалена
+  }
 }
+
 
 
 async function reindexPackageSessions(packageId) {
@@ -1061,9 +1116,12 @@ function renderActiveClientsBar() {
     const progress = ((pkg.used || 0) / pkg.size) * 100;
     html += `
       <div class="client-progress">
-        <div class="client-progress-label">${escapeHtml(name)} — ${pkg.used}/${pkg.size}</div>
-        <div class="client-progress-bar">
-          <div class="client-progress-fill" style="width:${progress}%"></div>
+        <div class="client-progress-label">${escapeHtml(truncateName (name))}</div>
+        <div class="client-progress-cont">
+            <div class="client-progress-pkgSize">${pkg.used}/${pkg.size}</div>
+            <div class="client-progress-bar">
+                <div class="client-progress-fill" style="width:${progress}%"></div>
+            </div>
         </div>
       </div>
     `;
@@ -1072,3 +1130,117 @@ function renderActiveClientsBar() {
   html += `</div>`;
   return html;
 }
+
+// --- Исправляем всплытие кликов внутри модалки ---
+document.body.addEventListener("click", (e) => {
+  // Останавливаем всплытие только если клик был именно по контенту модалки, а не по кнопкам
+  const modalInner = e.target.closest(".modal");
+  const isButton = e.target.closest("[data-action]");
+  if (modalInner && !isButton) {
+    e.stopPropagation();
+  }
+});
+
+
+
+document.addEventListener("click", async (e) => {
+  const el = e.target.closest("[data-action]");
+  if (!el) return;
+
+  const action = el.dataset.action;
+   window._lastClickEvent = e; // <-- добавляем эту строку
+  console.log("🔥 CLICK:", action);
+
+  switch (action) {
+    case "overlay-click":
+      if (e.target.classList.contains("modal-overlay")) {
+        state.modalOpen = false;
+        state.packageModalOpen = false;
+        state.confirm.open = false;
+        render();
+      }
+      break;
+
+    case "confirm-cancel":
+      state.confirm = { open: false, title: "", type: null, bookingId: null };
+      render();
+      break;
+
+    case "confirm-ok":
+       await handleConfirmOk(e); // <-- передаём e
+      break;
+
+    case "prev-week":
+      state.anchorDate = subWeeks(state.anchorDate, 1);
+      closeAllTransient();
+      render();
+      break;
+
+    case "next-week":
+      state.anchorDate = addWeeks(state.anchorDate, 1);
+      closeAllTransient();
+      render();
+      break;
+
+    case "today":
+      state.anchorDate = new Date();
+      closeAllTransient();
+      render();
+      break;
+
+    case "close-add-booking":
+      state.modalOpen = false;
+      render();
+      break;
+
+    case "save-booking":
+      await addBooking();
+      break;
+
+    case "confirm-delete-booking":
+      openConfirmDeleteBooking(el.dataset.id);
+      break;
+
+    case "open-package-modal-main":
+      openPackageModal("");
+      break;
+
+    case "open-package-modal-client":
+      openPackageModal(el.dataset.client || "");
+      break;
+
+    case "close-package-modal":
+      state.packageModalOpen = false;
+      render();
+      break;
+
+    case "save-package":
+      await savePackage();
+      break;
+
+    case "toggle-client-expand":
+      toggleClientExpand(el.dataset.client);
+      break;
+
+    case "toggle-package-expand":
+      togglePackageExpand(el.dataset.pid);
+      break;
+
+    case "remove-package":
+      await requestRemovePackage(el.dataset.client, el.dataset.pid);
+      break;
+
+    case "remove-client":
+      await requestRemoveClient(el.dataset.client);
+      break;
+  }
+});
+
+// --- ------------------------------
+// --- обрезка имени ---
+// ----------------------------------------
+function truncateName(name, max = 8) {
+  if (!name) return "";
+  return name.length > max ? name.slice(0, max) + "…" : name;
+}
+
