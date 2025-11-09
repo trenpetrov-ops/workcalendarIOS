@@ -602,13 +602,17 @@ button:active{
     transform: scale(1.05);
     transition: transform 0.2s ease;
 }
-td.bg-blue:active,
-.cell-clickable:active{
-    outline: 1px solid #aaaaaa;
-    transform: scale(1.5);
-    transition: transform 0.2s ease;
-    z-index: 100;
-    border-radius: 3px;
+.cell-clickable,
+.booking-item {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.cell-clickable:active,
+.booking-item:active,
+.booking-item.long-pressing {
+  transform: scale(1.1);
+  box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+  z-index: 20;
 }
 td.bg-white.cell-clickable,
 td.bg-orange.cell-clickable,
@@ -620,3 +624,7 @@ button:active {
   box-shadow: none !important;
   -webkit-tap-highlight-color: transparent; /* для мобильных */
 }
+
+
+
+
