@@ -24,10 +24,11 @@ jobs:
       - name: Fix permissions for Capacitor CLI
         run: chmod +x ./node_modules/.bin/cap
 
-      # Если build-скрипта нет, создаём подмену (чтобы не упало)
+      # ✅ Проверяем наличие build-скрипта
       - name: Ensure build script exists
         run: |
           if [ ! -f "package.json" ] || ! grep -q '"build"' package.json; then
+            echo '⚠️ No "build" script found — using capacitor sync'
             echo '{"scripts": {"build": "npx cap sync"}}' > package.json
           fi
 
@@ -37,7 +38,7 @@ jobs:
       - name: Sync Capacitor iOS
         run: npx cap sync ios
 
-      # ✅ Отключаем подпись — соберёт .ipa без Developer Team
+      # ✅ Собираем без подписи (чтобы не требовал Developer Team)
       - name: Build iOS archive (no signing)
         run: |
           cd ios
@@ -59,8 +60,18 @@ jobs:
             -exportPath ../build/ipa \
             -exportOptionsPlist App/exportOptions.plist || true
 
+      # 🔍 ШАГ ОТЛАДКИ — ищет, где появился .ipa
+      - name: Debug build folder
+        run: |
+          echo "📂 Checking for IPA files..."
+          find . -type f -name "*.ipa" || echo "❌ No IPA found"
+
+      # 📦 Загружаем артефакт IPA
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
           name: workcalendar-ios
-          path: build/ipa
+          path: |
+            ios/build/**/*.ipa
+            build/**/*.ipa
+            **/*.ipa
