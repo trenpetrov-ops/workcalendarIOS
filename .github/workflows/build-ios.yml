@@ -38,30 +38,7 @@ jobs:
       - name: Sync Capacitor iOS
         run: npx cap sync ios
 
-      # ✅ Создаём exportOptions.plist (для unsigned .ipa)
-      - name: Create exportOptions.plist
-        run: |
-          mkdir -p ios/App
-          cat <<EOF > ios/App/exportOptions.plist
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>method</key>
-            <string>ad-hoc</string>
-            <key>compileBitcode</key>
-            <false/>
-            <key>signingStyle</key>
-            <string>manual</string>
-            <key>stripSwiftSymbols</key>
-            <true/>
-            <key>thinning</key>
-            <string>&lt;none&gt;</string>
-          </dict>
-          </plist>
-          EOF
-
-      # ✅ Собираем без подписи
+      # ✅ Собираем iOS-архив без подписи
       - name: Build iOS archive (no signing)
         run: |
           cd ios
@@ -74,31 +51,26 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO archive
 
-      # ✅ Экспортируем .ipa без подписи
-      - name: Export unsigned IPA
+      # ✅ Упаковываем .ipa вручную (без подписи)
+      - name: Export unsigned IPA manually
         run: |
           cd ios
-          mkdir -p ../build/ipa
-          echo "🚀 Exporting unsigned IPA..."
-          xcodebuild -exportArchive \
-            -archivePath ../build/App.xcarchive \
-            -exportPath ../build/ipa \
-            -exportOptionsPlist App/exportOptions.plist \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            DEVELOPMENT_TEAM="" \
-            || true
-          echo "📦 Listing export folder:"
-          find ../build/ipa -type f || echo "❌ No IPA created"
+          echo "📦 Packaging unsigned IPA manually..."
+          mkdir -p ../build/ipa/Payload
+          APP_PATH=$(find ../build/App.xcarchive -type d -name "*.app" | head -n 1)
+          if [ -d "$APP_PATH" ]; then
+            cp -R "$APP_PATH" ../build/ipa/Payload/
+            cd ../build/ipa
+            zip -r workcalendar-ios.ipa Payload
+            echo "✅ IPA packaged successfully"
+          else
+            echo "❌ .app not found inside archive"
+            exit 1
+          fi
+          echo "📦 Listing IPA files:"
+          find . -type f -name "*.ipa" || echo "❌ No IPA created"
 
-      # 🔍 Проверяем где именно появился .ipa
-      - name: Debug build folder
-        run: |
-          echo "📂 Checking for IPA files..."
-          find . -type f -name "*.ipa" || echo "❌ No IPA found"
-
-      # 📦 Загружаем найденный IPA
+      # 📦 Загружаем IPA в Artifacts
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
