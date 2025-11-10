@@ -1,4 +1,5 @@
 // service-worker.js
+<<<<<<< HEAD
 const CACHE_VERSION = 'v6'; // ⬅️ увеличивай при каждом деплое
 const CACHE_NAME = `trainer-calendar-${CACHE_VERSION}`;
 
@@ -7,11 +8,20 @@ const urlsToCache = [
   '/workcalendar/index.html',
   '/workcalendar/style.css?v=20251109',
   '/workcalendar/app.js?v=20251109',
+=======
+const CACHE_NAME = 'trainer-calendar-v1';
+const urlsToCache = [
+  '/workcalendar/',
+  '/workcalendar/index.html',
+  '/workcalendar/style.css',
+  '/workcalendar/app.js',
+>>>>>>> 007bae8ac2e731c2d2ba4b92f2fbbda2987a2be0
   '/workcalendar/manifest.json',
   '/workcalendar/icons/icon-192.png',
   '/workcalendar/icons/icon-512.png'
 ];
 
+<<<<<<< HEAD
 // ---------- Установка ----------
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -75,4 +85,37 @@ self.addEventListener('fetch', (event) => {
         }
       })
   );
+=======
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => {
+      return cache.addAll(urlsToCache);
+    })
+  );
+});
+
+self.addEventListener('fetch', (event) => {
+  event.respondWith(
+    caches.match(event.request).then((response) => {
+      // если есть в кэше — вернуть, иначе загрузить из сети
+      return response || fetch(event.request);
+    })
+  );
+});
+
+self.addEventListener('activate', (event) => {
+  const whitelist = [CACHE_NAME];
+  event.waitUntil(
+    caches.keys().then((keyList) =>
+      Promise.all(
+        keyList.map((key) => {
+          if (!whitelist.includes(key)) {
+            return caches.delete(key);
+          }
+        })
+      )
+    )
+  );
+>>>>>>> 007bae8ac2e731c2d2ba4b92f2fbbda2987a2be0
 });
