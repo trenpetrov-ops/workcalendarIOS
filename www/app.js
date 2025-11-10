@@ -13,7 +13,6 @@ import {
   getDocs
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 
-import { Haptics, ImpactStyle } from '@capacitor/haptics';
 // ---------- Мини-замена date-fns ----------
 function addDays(date, days) {
   const d = new Date(date);
