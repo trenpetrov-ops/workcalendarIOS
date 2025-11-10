@@ -12,13 +12,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Node.js
+      # ✅ Правильная версия Node.js для Capacitor 7
+      - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
       - name: Build web app
         run: npm run build
@@ -44,6 +45,7 @@ jobs:
             -exportPath ../build/ipa \
             -exportOptionsPlist App/exportOptions.plist || true
 
+      # ✅ Автоматическая загрузка IPA-файла в артефакты
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
