@@ -1,0 +1,51 @@
+name: Build iOS (Capacitor)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-ios:
+    name: Build IPA for iOS
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web app
+        run: npm run build
+
+      - name: Sync Capacitor iOS
+        run: npx cap sync ios
+
+      - name: Build iOS archive
+        run: |
+          cd ios
+          xcodebuild -workspace App/App.xcworkspace \
+            -scheme App \
+            -sdk iphoneos \
+            -configuration Release \
+            -archivePath ../build/App.xcarchive archive
+
+      - name: Export IPA
+        run: |
+          cd ios
+          mkdir -p ../build/ipa
+          xcodebuild -exportArchive \
+            -archivePath ../build/App.xcarchive \
+            -exportPath ../build/ipa \
+            -exportOptionsPlist App/exportOptions.plist || true
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: workcalendar-ios
+          path: build/ipa
