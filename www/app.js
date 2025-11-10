@@ -268,9 +268,6 @@ let longPressTimer = null;
 let lpStartX = 0, lpStartY = 0;
 let targetEl = null;
 
-// --- Импорт можно оставить вверху файла ---
-
-
 document.addEventListener("touchstart", (e) => {
   const t = e.touches[0];
   lpStartX = t.clientX;
@@ -279,27 +276,10 @@ document.addEventListener("touchstart", (e) => {
   targetEl = e.target.closest(".cell-clickable, .booking-item");
   if (!targetEl) return;
 
-  // 👇 Визуальный эффект при удержании
+  // 👇 Добавляем класс для визуального эффекта
   targetEl.classList.add("long-pressing");
 
-  longPressTimer = setTimeout(async () => {
-    // 💥 Универсальная вибрация: работает и в Capacitor, и безопасна в браузере
-    try {
-      if (window.Capacitor?.isNativePlatform) {
-        // ✅ Запуск на iOS / Android
-        await window.Capacitor.Haptics.impact({ style: 'light' });
-      } else if (typeof Haptics !== 'undefined') {
-        // ✅ Плагин импортирован (если есть)
-        await Haptics.impact({ style: ImpactStyle.Light });
-      } else {
-        // 🖥️ В браузере просто пропускаем
-        console.log('Haptics unavailable in browser');
-      }
-    } catch (err) {
-      console.warn('Haptics error:', err);
-    }
-
-    // --- Определяем действие ---
+  longPressTimer = setTimeout(() => {
     const cell = targetEl.closest(".cell-clickable");
     const booking = targetEl.closest(".booking-item");
 
@@ -314,7 +294,6 @@ document.addEventListener("touchstart", (e) => {
     }
   }, LONG_PRESS_MS);
 }, { passive: false });
-
 
 document.addEventListener("touchmove", (e) => {
   if (!longPressTimer) return;
@@ -1290,7 +1269,3 @@ function truncateName(name, max = 8) {
   if (!name) return "";
   return name.length > max ? name.slice(0, max) + "…" : name;
 }
-
-
-
-
