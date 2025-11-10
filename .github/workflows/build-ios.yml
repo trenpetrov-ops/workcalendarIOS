@@ -20,6 +20,12 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      # ✅ Устанавливаем все необходимые плагины (включая Haptics)
+      - name: Install Capacitor plugins
+        run: |
+          npm install @capacitor/core @capacitor/cli @capacitor/ios
+          npm install @capacitor/haptics
+
       # ✅ Фиксим права на cap CLI
       - name: Fix permissions for Capacitor CLI
         run: chmod +x ./node_modules/.bin/cap
@@ -35,7 +41,7 @@ jobs:
       - name: Build web app
         run: npm run build
 
-      # ✅ НОВЫЙ ШАГ: синхронизация Capacitor плагинов (в т.ч. Haptics)
+      # ✅ Синхронизация Capacitor (генерация ios/Podfile и подключение Haptics)
       - name: Sync Capacitor plugins
         run: npx cap sync ios
 
