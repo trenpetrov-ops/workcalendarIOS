@@ -1,0 +1,23 @@
+{
+  "name": "Work Calendar",
+  "short_name": "Calendar",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#ffffff",
+<<<<<<< HEAD
+
+=======
+>>>>>>> 007bae8ac2e731c2d2ba4b92f2fbbda2987a2be0
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
