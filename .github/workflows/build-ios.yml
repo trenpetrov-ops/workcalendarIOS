@@ -35,7 +35,8 @@ jobs:
       - name: Build web app
         run: npm run build
 
-      - name: Sync Capacitor iOS
+      # ✅ НОВЫЙ ШАГ: синхронизация Capacitor плагинов (в т.ч. Haptics)
+      - name: Sync Capacitor plugins
         run: npx cap sync ios
 
       # ✅ Собираем iOS-архив без подписи
