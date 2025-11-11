@@ -287,10 +287,10 @@ document.addEventListener("touchstart", (e) => {
     try {
       if (window.Capacitor?.isNativePlatform) {
         // ✅ Запуск на iOS / Android
-        await window.Capacitor.Haptics.impact({ style: 'light' });
+        await window.Capacitor.Haptics.impact({ style: 'heavy' });
       } else if (typeof Haptics !== 'undefined') {
         // ✅ Плагин импортирован (если есть)
-        await Haptics.impact({ style: ImpactStyle.Light });
+        await Haptics.impact({ style: ImpactStyle.Heavy });
       } else {
         // 🖥️ В браузере просто пропускаем
         console.log('Haptics unavailable in browser');
