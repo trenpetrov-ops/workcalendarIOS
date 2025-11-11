@@ -112,7 +112,7 @@ header {
   gap: 6px;
   margin-bottom: 17px;
   flex-direction: row;
-  margin-top: 70px;
+  margin-top: 35px;
 }
 .calendar-header-left {
     font-size: 21px;
@@ -595,35 +595,52 @@ span.text-gray {
     font-weight: 500;
     color: #2b3c51;
 }
-td.bg-white.cell-clickable:active,
-td.bg-orange.cell-clickable:active{
-    background: #e5e7eb;
-}
-button:active{
-    transform: scale(1.05);
-    transition: transform 0.2s ease;
-}
+
+
+/* 🔹 базовый стиль ячейки */
 .cell-clickable,
 .booking-item {
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  position: relative;
+  overflow: visible; /* чтобы popup не обрезался */
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+  transform-origin: center center;
 }
 
-.cell-clickable:active,
-.booking-item:active,
-.booking-item.long-pressing {
-  transform: scale(1.1);
-  box-shadow: 0 6px 12px rgba(0,0,0,0.15);
-  z-index: 20;
+/* 🔹 стандартный отклик при тапе */
+.cell-clickable.pressed,
+.booking-item.pressed {
+  transform: scale(1.05);
+  box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+  background: rgba(229, 231, 235, 0.9);
 }
-td.bg-white.cell-clickable,
-td.bg-orange.cell-clickable,
-button,
-button:focus,
-button:focus-visible,
-button:active {
-  outline: none !important;
-  box-shadow: none !important;
-  -webkit-tap-highlight-color: transparent; /* для мобильных */
+
+/* 🔹 всплывающий popup (как на клавиатуре iOS) */
+.cell-clickable.pressed::after,
+.booking-item.pressed::after {
+  content: attr(data-label); /* содержимое popup */
+  position: absolute;
+  bottom: 100%; /* всплывает над ячейкой */
+  left: 50%;
+  transform: translate(-50%, 0) scale(0.8);
+  background: white;
+  border-radius: 10px;
+  padding: 4px 10px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #111;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+/* 🔹 когда popup активен — выезжает вверх */
+.cell-clickable.pressed.show-popup::after,
+.booking-item.pressed.show-popup::after {
+  opacity: 1;
+  transform: translate(-50%, -12px) scale(1);
 }
 
 
