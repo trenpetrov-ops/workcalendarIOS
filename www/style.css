@@ -598,7 +598,50 @@ span.text-gray {
 
 
 /* 🔹 базовый стиль ячейки */
-.cell-clickable,
+.cell-clickable{
+  position: relative;
+  overflow: visible; /* чтобы popup не обрезался */
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+  transform-origin: center center;
+}
+
+/* 🔹 стандартный отклик при тапе */
+.cell-clickable.pressed{
+  transform: scale(1.05);
+  box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+  background: rgba(229, 231, 235, 0.9);
+}
+
+/* 🔹 всплывающий popup (как на клавиатуре iOS) */
+.cell-clickable.pressed::after
+{
+    content: attr(data-label);
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translate(-50%, 0) scale(1);
+    background: rgba(229, 231, 235, 0.9);
+    border-radius: 4px;
+    padding: 6px 19px;
+    font-size: 14px;
+    font-weight: 500;
+    color: #111;
+    box-shadow: 0 4px 10px 0px rgb(0 0 0 / 50%);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease, transform 0.15s cubic-bezier(0.25, 0.1, 0.25, 1);
+    z-index:10;
+}
+
+/* 🔹 когда popup активен — выезжает вверх */
+.cell-clickable.pressed.show-popup::after {
+  opacity: 1;
+  transform: translate(-50%, -12px) scale(1);
+}
+
+
+/* 🔹 базовый стиль ячейки */
+
 .booking-item {
   position: relative;
   overflow: visible; /* чтобы popup не обрезался */
@@ -607,7 +650,7 @@ span.text-gray {
 }
 
 /* 🔹 стандартный отклик при тапе */
-.cell-clickable.pressed,
+
 .booking-item.pressed {
   transform: scale(1.05);
   box-shadow: 0 4px 10px rgba(0,0,0,0.15);
@@ -615,34 +658,34 @@ span.text-gray {
 }
 
 /* 🔹 всплывающий popup (как на клавиатуре iOS) */
-.cell-clickable.pressed::after,
-.booking-item.pressed::after {
+
+.booking-item.pressed{
   content: attr(data-label); /* содержимое popup */
-  position: absolute;
-  bottom: 100%; /* всплывает над ячейкой */
-  left: 50%;
-  transform: translate(-50%, 0) scale(0.8);
-  background: white;
-  border-radius: 10px;
-  padding: 4px 10px;
-  font-size: 14px;
-  font-weight: 500;
-  color: #111;
-  box-shadow: 0 4px 10px rgba(0,0,0,0.15);
-  opacity: 0;
-  pointer-events: none;
-  transition:
-    opacity 0.15s ease,
-    transform 0.15s cubic-bezier(0.25, 0.1, 0.25, 1);
+    position: absolute;
+    left: -11%;
+    top: -125%;
+    transform: translate(0, -100%) scale(0.8);
+    background: #c7d9e5;
+    border-radius: 4px;
+    padding: 5px 5px;
+    width: 100%;
+    font-size: 8px;
+    font-weight: 500;
+    color: #111;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease, transform 0.15s cubic-bezier(0.25, 0.1, 0.25, 1);
+    z-index:10;
 }
 
 /* 🔹 когда popup активен — выезжает вверх */
-.cell-clickable.pressed.show-popup::after,
-.booking-item.pressed.show-popup::after {
+
+.booking-item.pressed.show-popup {
   opacity: 1;
-  transform: translate(-50%, -12px) scale(1);
+  transform: translate(0, 0) scale(1);
 }
+.booking-item.pressed .booking-session {
+    font-size: 0px;
 
-
-
-
+}
