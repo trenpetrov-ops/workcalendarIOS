@@ -279,54 +279,65 @@ document.addEventListener("touchstart", (e) => {
   targetEl = e.target.closest(".cell-clickable, .booking-item");
   if (!targetEl) return;
 
-  // 👇 Визуальный эффект при удержании
   targetEl.classList.add("long-pressing");
 
-  // 💥 Мгновенный отклик при начале удержания (ощущается сразу)
-  try {
-    if (window.Capacitor?.Plugins?.Haptics) {
-      window.Capacitor.Plugins.Haptics.impact({ style: 'medium' });
-    } else if (typeof Haptics !== 'undefined') {
-      Haptics.impact({ style: 'medium' });
-    } else if ('vibrate' in navigator) {
-      navigator.vibrate(40);
-    }
-  } catch (err) {
-    console.log('⚠️ Haptics start error:', err);
-  }
-
-  // --- Таймер долгого удержания ---
-  longPressTimer = setTimeout(async () => {
+  // --- задержка перед "началом удержания" (предвибрация) ---
+  const preVibrationTimer = setTimeout(() => {
     try {
-      // 💥 Основная вибрация при срабатывании long press
+      if (window.Capacitor?.Plugins?.Haptics) {
+        window.Capacitor.Plugins.Haptics.impact({ style: 'light' });
+      } else if (typeof Haptics !== 'undefined') {
+        Haptics.impact({ style: 'light' });
+      } else if ('vibrate' in navigator) {
+        navigator.vibrate(30);
+      }
+    } catch (err) {
+      console.log('⚠️ preHaptics error:', err);
+    }
+  }, 120); // 🔹 лёгкий отклик только если палец держится ~0.1 сек
+
+  // --- основной таймер долгого удержания ---
+  longPressTimer = setTimeout(async () => {
+    clearTimeout(preVibrationTimer); // отменяем первую, если сработал long press
+
+    try {
+      // 💥 сильная вибрация при срабатывании long press
       if (window.Capacitor?.Plugins?.Haptics) {
         await window.Capacitor.Plugins.Haptics.impact({ style: 'heavy' });
       } else if (typeof Haptics !== 'undefined') {
         await Haptics.impact({ style: 'heavy' });
       } else if ('vibrate' in navigator) {
         navigator.vibrate(80);
-      } else {
-        console.log('Haptics unavailable');
       }
     } catch (err) {
       console.warn('Haptics long press error:', err);
     }
 
-    // --- Определяем действие ---
     const cell = targetEl.closest(".cell-clickable");
     const booking = targetEl.closest(".booking-item");
 
     if (cell && cell.dataset.date && cell.dataset.hour) {
-      // ✳️ Добавление
       openAddBookingModal(cell.dataset.date, parseInt(cell.dataset.hour, 10));
     }
 
     if (booking && booking.dataset.id) {
-      // ✳️ Удаление
       openConfirmDeleteBooking(booking.dataset.id);
     }
   }, LONG_PRESS_MS);
+
+  // --- отмена при движении или отпускании ---
+  const cancelPress = () => {
+    clearTimeout(longPressTimer);
+    clearTimeout(preVibrationTimer);
+    document.removeEventListener("touchend", cancelPress);
+    document.removeEventListener("touchmove", cancelPress);
+    targetEl.classList.remove("long-pressing");
+  };
+
+  document.addEventListener("touchend", cancelPress, { once: true });
+  document.addEventListener("touchmove", cancelPress, { once: true });
 }, { passive: false });
+
 
 
 
