@@ -149,13 +149,6 @@ const swipe = {
 function initGlobalHandlers() {
 
 
-
-
-
-
-
-
-
   document.body.addEventListener("change", (e) => {
     const el = e.target;
     if (el.matches("[data-bind='modalClient']")) {
@@ -170,7 +163,6 @@ function initGlobalHandlers() {
   });
 
  // ===== Свайп по календарю для смены недели =====
-// ===== Свайп по календарю для смены недели =====
 
 let swipeX = 0;
 let startX = 0;
@@ -255,36 +247,66 @@ document.addEventListener("touchend", () => {
   swipeX = 0;
   closeAllTransient();
 });
+//----------------------------------------------------
+// ----------------------------------------------------
+// ----------------------------------------------------
 
 
 
+
+
+// ----------------------------------------------------
 // ======== Долгое нажатие для добавления / удаления ========
+/// ----------------------------------------------------
 
-// ======== Долгое нажатие для добавления / удаления ========
 
 const LONG_PRESS_MS = 500;
 const MOVE_TOLERANCE = 10;
+
 let longPressTimer = null;
 let lpStartX = 0, lpStartY = 0;
 let targetEl = null;
-
-// --- Импорт можно оставить вверху файла ---
-
+let isMoving = false;
 
 document.addEventListener("touchstart", (e) => {
   const t = e.touches[0];
   lpStartX = t.clientX;
   lpStartY = t.clientY;
+  isMoving = false;
 
   targetEl = e.target.closest(".cell-clickable, .booking-item");
   if (!targetEl) return;
 
-  targetEl.classList.add("long-pressing");
+  // сбрасываем предыдущие состояния
+  targetEl.classList.remove("pressed");
+  targetEl.classList.remove("long-pressing");
 
-  // --- основной таймер долгого удержания ---
+  // таймер для визуального эффекта "pressed" (если не свайп)
+  // таймер для визуального эффекта "pressed" (если не свайп)
+  const pressedTimer = setTimeout(() => {
+    if (!isMoving) {
+      targetEl.classList.add("pressed");
+
+      // 👇 Добавляем popup-анимацию (всплытие, как на клавиатуре iPhone)
+      targetEl.classList.add("show-popup");
+
+      // Убираем popup чуть позже (через 200 мс)
+      setTimeout(() => {
+        targetEl.classList.remove("show-popup");
+      }, 200);
+    }
+  }, 80);
+
+
+  // основной таймер долгого удержания
   longPressTimer = setTimeout(async () => {
+    if (isMoving) return; // не реагировать на свайпы
+
+    targetEl.classList.remove("pressed");
+    targetEl.classList.add("long-pressing");
+
     try {
-      // 💥 Единичная вибрация при срабатывании long press
+      // 💥 Вибрация при срабатывании
       if (window.Capacitor?.Plugins?.Haptics) {
         await window.Capacitor.Plugins.Haptics.impact({ style: 'heavy' });
       } else if (typeof Haptics !== 'undefined') {
@@ -308,17 +330,32 @@ document.addEventListener("touchstart", (e) => {
     }
   }, LONG_PRESS_MS);
 
-  // --- отмена при движении или отпускании ---
-  const cancelPress = () => {
-    clearTimeout(longPressTimer);
-    document.removeEventListener("touchend", cancelPress);
-    document.removeEventListener("touchmove", cancelPress);
-    targetEl.classList.remove("long-pressing");
+  // обработка движения
+  const handleMove = (eMove) => {
+    const m = eMove.touches[0];
+    const dx = Math.abs(m.clientX - lpStartX);
+    const dy = Math.abs(m.clientY - lpStartY);
+    if (dx > MOVE_TOLERANCE || dy > MOVE_TOLERANCE) {
+      // пользователь двигает палец — значит, это свайп
+      isMoving = true;
+      clearTimeout(longPressTimer);
+      clearTimeout(pressedTimer);
+      targetEl.classList.remove("pressed", "long-pressing");
+    }
   };
 
+  const cancelPress = () => {
+    clearTimeout(longPressTimer);
+    clearTimeout(pressedTimer);
+    document.removeEventListener("touchend", cancelPress);
+    document.removeEventListener("touchmove", handleMove);
+    targetEl.classList.remove("pressed", "long-pressing");
+  };
+
+  document.addEventListener("touchmove", handleMove, { passive: true });
   document.addEventListener("touchend", cancelPress, { once: true });
-  document.addEventListener("touchmove", cancelPress, { once: true });
-}, { passive: false });
+}, { passive: true });
+
 
 
 
