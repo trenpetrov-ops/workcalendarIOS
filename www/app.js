@@ -282,21 +282,34 @@ document.addEventListener("touchstart", (e) => {
   // 👇 Визуальный эффект при удержании
   targetEl.classList.add("long-pressing");
 
+  // 💥 Мгновенный отклик при начале удержания (ощущается сразу)
+  try {
+    if (window.Capacitor?.Plugins?.Haptics) {
+      window.Capacitor.Plugins.Haptics.impact({ style: 'medium' });
+    } else if (typeof Haptics !== 'undefined') {
+      Haptics.impact({ style: 'medium' });
+    } else if ('vibrate' in navigator) {
+      navigator.vibrate(40);
+    }
+  } catch (err) {
+    console.log('⚠️ Haptics start error:', err);
+  }
+
+  // --- Таймер долгого удержания ---
   longPressTimer = setTimeout(async () => {
-    // 💥 Универсальная вибрация: работает и в Capacitor, и безопасна в браузере
     try {
-      if (window.Capacitor?.isNativePlatform) {
-        // ✅ Запуск на iOS / Android
-        await window.Capacitor.Haptics.impact({ style: 'heavy' });
+      // 💥 Основная вибрация при срабатывании long press
+      if (window.Capacitor?.Plugins?.Haptics) {
+        await window.Capacitor.Plugins.Haptics.impact({ style: 'heavy' });
       } else if (typeof Haptics !== 'undefined') {
-        // ✅ Плагин импортирован (если есть)
-        await Haptics.impact({ style: ImpactStyle.Heavy });
+        await Haptics.impact({ style: 'heavy' });
+      } else if ('vibrate' in navigator) {
+        navigator.vibrate(80);
       } else {
-        // 🖥️ В браузере просто пропускаем
-        console.log('Haptics unavailable in browser');
+        console.log('Haptics unavailable');
       }
     } catch (err) {
-      console.warn('Haptics error:', err);
+      console.warn('Haptics long press error:', err);
     }
 
     // --- Определяем действие ---
@@ -314,6 +327,7 @@ document.addEventListener("touchstart", (e) => {
     }
   }, LONG_PRESS_MS);
 }, { passive: false });
+
 
 
 document.addEventListener("touchmove", (e) => {
@@ -1291,7 +1305,6 @@ function truncateName(name, max = 8) {
   return name.length > max ? name.slice(0, max) + "…" : name;
 }
 
-
 document.addEventListener("DOMContentLoaded", () => {
   const btn = document.getElementById("hapticsTest");
   if (!btn) return;
@@ -1313,8 +1326,5 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 });
-
-
-
 
 
