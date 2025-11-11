@@ -1292,5 +1292,29 @@ function truncateName(name, max = 8) {
 }
 
 
+document.addEventListener("DOMContentLoaded", () => {
+  const btn = document.getElementById("hapticsTest");
+  if (!btn) return;
+  btn.addEventListener("click", async () => {
+    try {
+      const cap = window.Capacitor;
+      console.log("Capacitor:", cap);
+      if (cap?.isNativePlatform && cap?.Plugins?.Haptics) {
+        await cap.Plugins.Haptics.impact({ style: 'heavy' });
+        alert("✅ Haptics вызван (heavy)");
+      } else if ('vibrate' in navigator) {
+        navigator.vibrate(100);
+        alert("💡 vibrate() вызван");
+      } else {
+        alert("❌ Haptics недоступен");
+      }
+    } catch (err) {
+      alert("⚠️ Ошибка Haptics: " + err);
+    }
+  });
+});
+
+
+
 
 
