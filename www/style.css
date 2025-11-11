@@ -7,16 +7,15 @@ body {
 }
 
 
-
 html, body {
     height: 100%;
     margin: 0;
     padding: 0;
     touch-action: none;
-      overscroll-behavior: none;
-      -webkit-overflow-scrolling: auto;
+    overscroll-behavior: none;
+    -webkit-overflow-scrolling: auto;
     overflow: hidden;
-
+    touch-action: pan-x pan-y;
 }
 #app {
     overflow-y: auto;
@@ -81,20 +80,21 @@ button {
 
 
 .btn-blue {
-  background: #2563eb;
-  color: #ffffff;
-  border: 1px solid #2563eb;
+    background: #577c8e;
+    color: #e7e7e7;
+    border: 1px solid #577c8e;
 }
 
 .btn-gray {
-  background: #e5e7eb;
-  border: 1px solid #cacaca;
+    background: #daddd8;
+    border: 1px solid #c8cac6;
+    color: #353535;
 }
 
 .btn-red {
-  background: #d1393d;
-  color: #ffffff;
-  border: 1px solid #d1393d;
+    background: #c64a4d;
+    color: #efefef;
+    border: 1px solid #b04144;
 }
 
 .btn-green {
@@ -103,7 +103,14 @@ button {
   padding: 6px 27px;
   margin-bottom: 11px;
 }
+.calendar-header-right button:active,
+.btn-red:active,
+.btn-blue:active,
+.btn-gray:active {
+    transform: scale(1.05);
+    transition: transform 0.2s ease;
 
+}
 /* Заголовок */
 
 header {
@@ -394,25 +401,27 @@ span.text-gray {
 }
 
 .modal h3 {
-  font-size: 14px;
-  font-weight: 600;
-  margin: 0 0 8px;
+    font-size: 14px;
+    font-weight: 600;
+    margin: 0 0 8px;
+    color: #212c3b;
 }
 
 .modal p {
-  margin: 0 0 7px;
-  font-size: 11px;
+    margin: 0 0 7px;
+    font-size: 11px;
+    color: #212c3b;
 }
 
-.modal input,
-.modal select {
-  width: 100%;
-  padding: 6px 6px;
-  margin-bottom: 8px;
-  border-radius: 4px;
-  border: 1px solid #d1d5db;
-  font-size: 12px;
-  box-sizing: border-box;
+.modal input, .modal select {
+    width: 100%;
+    padding: 6px 6px;
+    margin-bottom: 8px;
+    border-radius: 4px;
+    border: 1px solid #d1d5db;
+    font-size: 12px;
+    box-sizing: border-box;
+    color: #212c3b;
 }
 
 .modal-actions {
@@ -491,6 +500,10 @@ span.text-gray {
   transition: transform 1s ease-out;
   will-change: transform;
 }
+
+
+/* --- улучшения для плавности свайпа (iOS-like physics) --- */
+
 
 .calendar-week {
   flex: 0 0 33.333%;
@@ -685,7 +698,7 @@ span.text-gray {
   opacity: 1;
   transform: translate(0, 0) scale(1);
 }
+
 .booking-item.pressed .booking-session {
     font-size: 0px;
-
 }
