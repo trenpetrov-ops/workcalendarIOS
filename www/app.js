@@ -293,7 +293,7 @@ document.addEventListener("touchstart", (e) => {
       // Убираем popup чуть позже (через 200 мс)
       setTimeout(() => {
         targetEl.classList.remove("show-popup");
-      }, 200);
+      }, 400);
     }
   }, 80);
 
