@@ -190,9 +190,9 @@ document.addEventListener("touchend", () => {
   const zone = document.querySelector(".calendar-scroll-inner");
   if (!zone) return;
 
-  const THRESHOLD = 60; // порог в пикселях
-  const ANIM_SPEED = 0.3; // скорость плавного вставания
-  const EASING = "cubic-bezier(0.5, 0.9, 0.9, 0.8)"; // мягкий айфоновский easing
+  const THRESHOLD = 75; // порог в пикселях
+  const ANIM_SPEED = 0.38; // скорость плавного вставания
+  const EASING = "cubic-bezier(0.25, 1, 0.5, 1)"; // мягкий айфоновский easing
 
   if (swipeX < -THRESHOLD) {
     // Свайп влево → следующая неделя
@@ -201,6 +201,7 @@ document.addEventListener("touchend", () => {
 
     zone.addEventListener("transitionend", function next() {
       zone.removeEventListener("transitionend", next);
+
 
       state.anchorDate = addWeeks(state.anchorDate, 1);
       render();
@@ -495,6 +496,38 @@ function escapeHtml(str = "") {
 function render() {
   const app = document.getElementById("app");
   if (!app) return;
+
+    // 🛡️ Анти-тап защита при появлении модалок
+      if (!window._modalTouchBlockerSet) {
+        window._modalTouchBlockerSet = true;
+        const observer = new MutationObserver(() => {
+          const hasModal = document.querySelector(".modal-overlay, .modal");
+          if (hasModal) {
+            // Добавляем временный блокер касаний, как в iOS UIKit
+            const blocker = document.createElement("div");
+            blocker.style.cssText = `
+              position: fixed;
+              inset: 0;
+              background: transparent;
+              z-index: 9999;
+              pointer-events: auto;
+            `;
+            const isCapacitor = !!window.Capacitor;
+            if (isCapacitor) {
+              setTimeout(() => {
+                document.body.appendChild(blocker);
+                setTimeout(() => blocker.remove(), 300);
+              }, 20);
+            }
+
+
+          }
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+      }
+
+
+
 
   if (currentPage === "calendar") {
     app.innerHTML = `
