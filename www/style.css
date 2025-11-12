@@ -1,12 +1,15 @@
 body {
-  background-color: #f9f9f9;
+  background-color: #F2F2F7;
   color: #000000;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
   margin: 0;
   padding: 0;
 }
 
-
+html, body {
+    touch-action: manipulation; /* Отключает жесты масштабирования */
+    overscroll-behavior: contain;
+}
 html, body {
     height: 100%;
     margin: 0;
@@ -43,10 +46,32 @@ button, input, select, textarea {
   -webkit-user-select: auto;
   user-select: auto;
 }
-html, body {
-    touch-action: manipulation; /* Отключает жесты масштабирования */
-    overscroll-behavior: contain;
+button,
+button * {
+  -webkit-user-select: none !important;
+  user-select: none !important;
+  -webkit-touch-callout: none !important;
+  -webkit-tap-highlight-color: transparent !important;
 }
+
+button:focus,
+button:active {
+  outline: none !important;
+}
+
+button::selection {
+  background: transparent !important;
+}
+
+button svg,
+button path,
+button span {
+  pointer-events: none;
+}
+
+
+
+
 /* Убираем focus-обводку и подсветку при тапе на мобильных */
 
 
@@ -98,10 +123,11 @@ button {
 }
 
 .btn-green {
-  background: #0eab48;
-  color: #ffffff;
-  padding: 6px 27px;
+  background: none;
+  color: #394759;
+  padding: 0px 0px;
   margin-bottom: 11px;
+  margin-left: 14px;
 }
 .calendar-header-right button:active,
 .btn-red:active,
@@ -147,11 +173,11 @@ table {
 th,
 td {
   /* border: 1px solid #d1d5db; */
-  padding: 2px 2px;
+  padding: 0px 0px;
   text-align: center;
   position: relative;
-  border-left: 1px solid #d1d5db;
-  border-bottom: 1px solid #d1d5db;
+  border-left: 1px solid #c0c6ca;
+  border-bottom: 1px solid #c0c6ca;
 }
 
 thead th {
@@ -159,6 +185,7 @@ thead th {
   font-size: 9px;
   height: 37px;
   border-top: none;
+  padding: 2px 0px;
 }
 
 td.time-cell {
@@ -166,35 +193,36 @@ td.time-cell {
 }
 
 .bg-yellow {
-  background-color: #f9f9f9;
+  /* background-color: #f2f2f7; */
   border-left: none;
 }
 th.bg-yellow, th.bg-gray {
-    width: 21px;
-    border-left: none;
+    width: 24px;
+    /* border-left: none; */
 }
 .bg-gray {
-  background-color: #f9f9f9;
-  border-right: 1px solid #d1d5db;
+  background-color: #f2f2f7;
+  border-right: 1px solid #c0c6ca;
 }
 
 .bg-blue {
   background-color: #c7d9e5;
-  border-color: #c4c7cd;
+  border-color: #c2c5cb;
   /* border-top: 1px solid #94aecf; */
-  /* box-shadow: 0px 0px 0px 0px rgb(172 58 58), 0 0.5px 1px rgb(135 135 135); */
   transition: transform 0.15s ease, box-shadow 0.15s ease;
   z-index: 2;
 }
 
 .bg-white {
-  background-color: #fefefe;
+  background-color: #f6f6f9;
 }
 
 .bg-red {
-  background-color: #f9f9f9;
+  /* background-color: #f2f2f7; */
 }
-
+th.bg-red.today-col .date, th.bg-red.today-col .weekday {
+    color: #bf5704;
+}
 span.date {
     display: block;
     font-size: 14px;
@@ -213,9 +241,11 @@ th.bg-orange span.weekday {
     color: #2b3c51;
 }
 .bg-orange {
-  background-color: #fbfbfb;
+  background-color: #f3f3f8;
 }
-
+th.bg-orange {
+    background-color: #f2f2f7;
+}
 .weekend-col {
   background-color: #fff7ed;
 }
@@ -224,7 +254,7 @@ th.bg-orange span.weekday {
 
 .cell-clickable {
   cursor: pointer;
-  height: 24px;
+  height: 28px;
 }
 
 /* Бронирования */
@@ -232,14 +262,13 @@ th.bg-orange span.weekday {
 .booking-wrap {
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  height: 23px;
+  /* gap: 1px; */
+  height: 28px;
   overflow: hidden;
 }
 
 .booking-item {
   position: relative;
-  border-radius: 3px;
   padding: 1px 2px;
   font-size: 7px;
   /* background-color: #bfdbfe; */
@@ -259,8 +288,8 @@ th.bg-orange span.weekday {
 
 .booking-session {
   position: absolute;
-  left: 1px;
-  bottom: 0;
+  left: 3px;
+  bottom: 2px;
   font-size: 6px;
   line-height: 1;
 }
@@ -282,12 +311,8 @@ th.bg-orange span.weekday {
 /* Панель клиентов */
 
 .client-panel {
-  margin-top: 16px;
-  padding: 17px 9px;
-  border-radius: 6px;
-  border: 1px solid #d1d5db;
-  background-color: #f9fafb;
-  font-size: 13px;
+  margin-top: 80px;
+  padding: 0px 9px;
 }
 
 .client-panel-header {
@@ -298,65 +323,74 @@ th.bg-orange span.weekday {
 
 .client-list {
   margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .client-card {
   border-radius: 6px;
-  border: 1px solid #e5e7eb;
-  border-bottom: 2px solid #e5e7eb;
-  padding: 9px 14px;
+  border: 1px solid #eeeeee;
+  /* border-bottom: 2px solid #e3e3e3; */
   background-color: #ffffff;
-  margin-bottom: 6px;
+  margin-bottom: 0px;
+  min-height: 40px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .client-card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 2px 0px;
 }
 
 .client-name {
-  font-weight: 600;
+  font-weight: 500;
+  width: 100%;
+  font-size: 13px;
+  color: #2b3c51;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  padding-left: 15px;
 }
 
 .client-status {
-  font-size: 11px;
+  font-size: 10px;
   color: #6b7280;
-  padding-left: 4px;
-  font-weight: 500;
+  padding-left: 7px;
+  font-weight: 200;
 }
 
-.client-actions {
-  display: flex;
-  gap: 39px;
-  align-items: center;
-}
+.client-actions {width: 13%;}
 
 .client-actions button {
-  font-size: 9px;
-  padding: 6px 10px;
+  padding: 0px 0px;
+  background: none;
+  color: #787e84;
+  margin-top: 5px;
 }
 
 /* Пакеты */
 
 .package-details {
-  margin-top: 0px;
   margin-left: 10px;
   font-size: 12px;
   color: #4b5563;
   padding-top: 0px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  margin-top: 3px;
 }
 
 .package-line {
   display: flex;
-  align-items: center;
-  gap: 1px;
-  margin-bottom: 5px;
+  margin-bottom: 17px;
+  margin-left: 23px;
   font-weight: 500;
-  margin-top: 11px;
+  margin-top: 0px;
   flex-direction: row;
-  justify-content: space-between;
+  justify-content: flex-start;
 }
 span.text-gray {
     padding-left: 5px;
@@ -369,20 +403,58 @@ span.text-gray {
   background: transparent;
   padding: 0;
   font-weight: 600;
+  margin-left: 51px;
 }
 
 /* Список тренировок пакета */
 
 .package-sessions {
   display: flex;
-  margin-top: 3px;
-  margin-left: 19px;
+  margin-top: 0px;
+  margin-left: 38px;
   font-size: 12px;
   color: #6b7280;
   gap: 3px;
   flex-direction: column;
-  margin-bottom: 5px;
+  margin-bottom: 14px;
+  align-items: flex-start;
+  margin-top: -9px;
 }
+.sessions-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+button.copy-btn {
+    background: none;
+    padding: 0;
+    margin-top: 7px;
+    color: #606d7d;
+}
+/* ---------------уведомления внизу ------------- */
+.toast-message {
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: rgba(0, 0, 0, 0.8);
+  color: #fff;
+  font-size: 14px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  opacity: 0;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+  z-index: 9999;
+  pointer-events: none;
+}
+.toast-message.visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+
+
+
 
 /* Модальные окна */
 
@@ -450,15 +522,16 @@ span.text-gray {
   overflow: hidden;
   position: relative;
   padding-top: 1px;
+  padding-right: 1px;
 }
 
 /* Левая часть — фиксированные 2 столбца */
 .calendar-left {
   flex: 0 0 auto;
-  width: 50px; /* примерно ширина двух колонок */
+  width: 56px; /* примерно ширина двух колонок */
   z-index: 3;
   /* background: #fff; */
-  /* border-right: 1px solid #d1d5db; */
+  border-right: 1px solid #d1d5db;
   position: sticky;
   left: 0;
   backface-visibility: hidden;
@@ -569,7 +642,7 @@ span.text-gray {
 }
 /* === нав бар === */
 .active-clients-bar {
-  background: #f9f9f9;
+  /* background: #f9f9f9; */
   padding: 22px 10px 0px 10px;
   margin-top: 0;
 }
@@ -598,7 +671,7 @@ span.text-gray {
 
 .client-progress-bar {
   height: 4px;
-  background: #d5d3d3;
+  background: #d0d6dd;
   border-radius: 3px;
   overflow: hidden;
   width: 80%;
@@ -667,6 +740,7 @@ span.text-gray {
   overflow: visible; /* чтобы popup не обрезался */
   transition: transform 0.1s ease, box-shadow 0.1s ease;
   transform-origin: center center;
+  padding: 0px 2px;
 }
 
 /* 🔹 стандартный отклик при тапе */
@@ -709,3 +783,141 @@ span.text-gray {
 .booking-item.pressed .booking-session {
     font-size: 0px;
 }
+
+
+
+
+
+
+.client-card-header-wrap{
+  position: relative;
+  overflow: hidden; /* держим кнопку под хедером */
+  /* border-radius: 6px; */
+  margin-bottom: 0px;
+}
+
+.client-card-header {
+  background: #ffffff;
+  transition: transform .25s cubic-bezier(.22,1,.36,1);
+  will-change: transform;
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: row;
+  height: 40px;
+  align-items: center;
+}
+
+.client-swipe-actions {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 88px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #e7e7ef;
+  z-index: 1; /* ниже хедера */
+  pointer-events: none;
+}
+
+.client-card.swiped .client-swipe-actions {
+  pointer-events: auto;
+}
+
+.client-delete-btn {
+  background: none;
+  color: #cd3931;
+  border: none;
+  border-radius: 10px;
+  padding: 0px 0px;
+  font-size: 14px;
+  margin-top: 4px;
+}
+
+
+
+.bottom-nav {
+  display: none !important;
+}
+.fab-btn {
+}
+
+.fab-btn:hover {
+}
+
+.fab-btn:active {
+  transform: scale(0.95);
+}
+
+
+
+/* Плавающая кнопка */
+.fab-btn{
+  position: fixed;
+  right: 17px;
+  bottom: 15px;
+  width: 64px;
+  height: 64px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: #3f525f;
+  cursor: pointer;
+  z-index: 15;              /* выше нижнего меню */
+  display: grid;
+  place-items: center;
+  transition: transform .2s ease, box-shadow .2s ease;
+}
+.fab-btn:active{ transform: scale(.96); }
+
+/* SVG-иконки внутри кнопки */
+.fab-btn .icon{
+  position: absolute;    /* обе лежат друг над другом */
+  opacity: 0;
+  transition: opacity .2s ease;
+}
+
+/* Активная иконка видима */
+.fab-btn .icon.active{ opacity: 1; }
+
+/* Эффект «прорисовки» линий */
+.fab-btn .icon g > *{
+  stroke-dasharray: 1;       /* потому что pathLength="1" */
+  stroke-dashoffset: 1;
+  transition: stroke-dashoffset .6s cubic-bezier(.25,1,.5,1);
+}
+
+/* Когда добавляем класс .draw — линии дорисовываются */
+.fab-btn .icon.draw g > *{ stroke-dashoffset: 0; }
+
+/* Уважать системные настройки */
+@media (prefers-reduced-motion: reduce){
+  .fab-btn, .fab-btn .icon, .fab-btn .icon g > *{
+    transition: none !important;
+  }
+}
+
+/* Твоё нижнее меню остаётся как было.
+   Если нужно, можешь закрепить его поверх контента: */
+.bottom-nav{
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 10;
+}
+
+
+
+
+/* 🌞 Подсветка записей на сегодняшний день */
+.booking-today {
+  background: #e2af87;
+}
+
+@keyframes pulseBooking {
+  0%, 100% { box-shadow: 0 0 6px rgba(255, 215, 0, 0.6); }
+  50% { box-shadow: 0 0 14px rgba(255, 215, 0, 1); }
+}
+
+
