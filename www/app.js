@@ -594,16 +594,21 @@ function renderWeek(offset) {
   let html = `<table><thead><tr>`;
 
 week.forEach((day, idx) => {
-  const dateStr = format(day, "d"); // ← только число
+  const dateStr = format(day, "d");
   const weekday = ruShort[day.getDay()];
   const isWeekend = idx >= 5;
 
+  // ✅ Проверяем, совпадает ли с сегодняшним днем
+  const isToday =
+    format(day, "yyyy-MM-dd") === format(new Date(), "yyyy-MM-dd");
+
   html += `
-    <th class="${isWeekend ? "bg-orange" : "bg-red"}">
+    <th class="${isWeekend ? "bg-orange" : "bg-red"} ${isToday ? "today-col" : ""}">
       <span class="date">${dateStr}</span>
       <span class="weekday">${weekday}</span>
     </th>`;
 });
+
 
 
   html += `</tr></thead><tbody>`;
@@ -626,14 +631,17 @@ week.forEach((day, idx) => {
               data-hour="${h}"></td>`;
       } else {
         html += `<td class="bg-blue"><div class="booking-wrap">`;
-        items.forEach((b) => {
-html += `
-  <div class="booking-item" data-id="${b.id}">
-    <div class="booking-name">${escapeHtml(b.clientName)}</div>
-    <div class="booking-session">${b.sessionNumber || ""}</div>
-  </div>`;
+items.forEach((b) => {
+  // Проверяем: эта запись — на сегодняшний день?
+  const isToday = b.dateISO === format(new Date(), "yyyy-MM-dd");
 
-        });
+  html += `
+    <div class="booking-item ${isToday ? "booking-today" : ""}" data-id="${b.id}">
+      <div class="booking-name">${escapeHtml(b.clientName)}</div>
+      <div class="booking-session">${b.sessionNumber || ""}</div>
+    </div>`;
+});
+
         html += `</div></td>`;
       }
     });
@@ -684,16 +692,17 @@ function renderFixedTimes() {
 }
 
 
-
-// ---------- Панель клиентов ----------
 function renderClientsPanel() {
   const names = clientNames();
 
-  let html = `<div class="client-panel">
-    <div class="client-panel-header">
-      <button class="btn-green" data-action="open-package-modal-main">+</button>
-    </div>
-    <div class="client-list">
+  let html = `
+    <div class="client-panel">
+      <div class="client-panel-header">
+        <button class="btn-green" data-action="open-package-modal-main">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><title>List-add SVG Icon</title><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 17h7m5-1h3m0 0h3m-3 0v3m0-3v-3M3 12h11M3 7h11"></path></svg>
+        </button>
+      </div>
+      <div class="client-list">
   `;
 
   if (names.length === 0) {
@@ -707,108 +716,138 @@ function renderClientsPanel() {
       );
 
       const activePkg = pkgList.find((p) => (p.used || 0) < p.size);
-
       const sharedPkg = pkgList.find(
         (p) => Array.isArray(p.clientNames) && p.clientNames.length > 1
       );
-      const isSecondaryInShared =
-        sharedPkg && sharedPkg.clientNames[0] !== name;
-
+      const isSecondaryInShared = sharedPkg && sharedPkg.clientNames[0] !== name;
       const expanded = !!state.expandedClients[name];
 
+      // карточка клиента
       html += `
-        <div class="client-card">
+        <div class="client-card" data-client="${escapeHtml(name)}">
+
+<div class="client-card-header-wrap">
+          <!-- кнопка удаления под хедером -->
+          <div class="client-swipe-actions">
+            <button class="client-delete-btn"
+                    data-action="remove-client"
+                    data-client="${escapeHtml(name)}"
+                    aria-label="Удалить">
+                <svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24"><title>Trash-24 SVG Icon</title><path fill="currentColor" d="M16 1.75V3h5.25a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1 0-1.5H8V1.75C8 .784 8.784 0 9.75 0h4.5C15.216 0 16 .784 16 1.75m-6.5 0V3h5V1.75a.25.25 0 0 0-.25-.25h-4.5a.25.25 0 0 0-.25.25M4.997 6.178a.75.75 0 1 0-1.493.144L4.916 20.92a1.75 1.75 0 0 0 1.742 1.58h10.684a1.75 1.75 0 0 0 1.742-1.581l1.413-14.597a.75.75 0 0 0-1.494-.144l-1.412 14.596a.25.25 0 0 1-.249.226H6.658a.25.25 0 0 1-.249-.226z"></path><path fill="currentColor" d="M9.206 7.501a.75.75 0 0 1 .793.705l.5 8.5A.75.75 0 1 1 9 16.794l-.5-8.5a.75.75 0 0 1 .705-.793Zm6.293.793A.75.75 0 1 0 14 8.206l-.5 8.5a.75.75 0 0 0 1.498.088l.5-8.5Z"></path></svg>
+                    </button>
+          </div>
+
+          <!-- шапка (имя + кнопки), она уезжает при свайпе -->
           <div class="client-card-header">
             <div class="client-name"
                  data-action="toggle-client-expand"
                  data-client="${escapeHtml(name)}">
               ${escapeHtml(name)}
               <span class="client-status">
-                ${
-                  activePkg
-                    ? `${activePkg.used || 0}/${activePkg.size}`
-                    : "✓ завершено"
-                }
+                ${activePkg ? `${activePkg.used || 0}/${activePkg.size}` : "✓ завершено"}
               </span>
             </div>
             <div class="client-actions">
-              ${
-                !isSecondaryInShared
-                  ? `<button data-action="open-package-modal-client"
-                             data-client="${escapeHtml(name)}">
-                        + пакет
-                     </button>`
-                  : ""
-              }
-              <button class="btn-red"
-                      data-action="remove-client"
-                      data-client="${escapeHtml(name)}">
-                удалить
-              </button>
+              ${!isSecondaryInShared ? `
+                <button data-action="open-package-modal-client"
+                        data-client="${escapeHtml(name)}">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 16 16"><title>Plus SVG Icon</title><path fill="currentColor" d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"></path></svg>
+                        </button>
+              ` : ""}
             </div>
+          </div>
           </div>
       `;
 
+      // если раскрыто — показываем пакеты
       if (expanded) {
         html += `<div class="package-details">`;
+
         pkgList.forEach((p) => {
-          const pkgExpanded = !!state.expandedPackages[p.id];
           const used = p.used || 0;
           const size = p.size;
+          const pkgExpanded = !!state.expandedPackages[p.id];
+
           html += `
             <div class="package-line">
-              <div data-action="toggle-package-expand"
-                   data-pid="${p.id}">
+              <div data-action="toggle-package-expand" data-pid="${p.id}">
                 ${used}/${size} — ${formatPurchase(p.addedISO)}
-                ${
-                  p.clientNames && p.clientNames.length > 1
-                    ? `<span class="text-gray">
-                         (Общий: ${p.clientNames.join(", ")})
-                       </span>`
-                    : ""
-                }
+                ${p.clientNames && p.clientNames.length > 1
+                  ? `<span class="text-gray">(Общий: ${p.clientNames.join(", ")})</span>`
+                  : ""}
               </div>
-              ${
-                used >= size
-                  ? `<button class="package-remove-btn"
-                             data-action="remove-package"
-                             data-client="${escapeHtml(name)}"
-                             data-pid="${p.id}">
-                        ✕
-                     </button>`
-                  : ""
-              }
+              ${used >= size ? `
+                <button class="package-remove-btn"
+                        data-action="remove-package"
+                        data-client="${escapeHtml(name)}"
+                        data-pid="${p.id}">
+
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24">
+                                                  <path fill="currentColor" d="M18.3 5.71a1 1 0 0 0-1.41 0L12 10.59L7.11 5.7A1 1 0 1 0 5.7 7.11L10.59 12L5.7 16.89a1 1 0 1 0 1.41 1.41L12 13.41l4.89 4.89a1 1 0 0 0 1.41-1.41L13.41 12l4.89-4.89a1 1 0 0 0 0-1.4z"></path>
+                                                </svg>
+                        </button>` : ``}
             </div>
           `;
 
           if (pkgExpanded) {
             const sessions = bookingsForPackage(p.id, name);
-            html += `<div class="package-sessions">`;
-            if (sessions.length === 0) {
-              html += `<div>Нет записей</div>`;
-            } else {
-              sessions.forEach((b) => {
-                html += `<div>
-                  ${b.sessionNumber || "?"} / ${size} —
-                  ${escapeHtml(
-                    format(parseISO(b.dateISO), "d LLL", { locale: ru })
-                  )}
-                </div>`;
-              });
-            }
-            html += `</div>`;
+            const sessionText =
+              sessions.length === 0
+                ? "Нет записей"
+                : sessions
+                    .map(
+                      (b) =>
+                        `${b.sessionNumber || "?"} / ${size} — ${format(
+                          parseISO(b.dateISO),
+                          "d LLL",
+                          { locale: ru }
+                        )}`
+                    )
+                    .join("\n");
+
+            html += `
+              <div class="package-sessions" data-pid="${p.id}">
+
+                <div class="sessions-list">
+                  ${
+                    sessions.length === 0
+                      ? `<div>Нет записей</div>`
+                      : sessions
+                          .map(
+                            (b) => `
+                            <div>
+                              ${b.sessionNumber || "?"} / ${size} —
+                              ${escapeHtml(
+                                format(parseISO(b.dateISO), "d LLL", { locale: ru })
+                              )}
+                            </div>`
+                          )
+                          .join("")
+                  }
+                </div>
+                    <button class="copy-btn"
+                            data-action="copy-sessions"
+                            data-text="${escapeHtml(sessionText)}"
+                            title="Скопировать">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 256 256"><title>Copy SVG Icon</title><path fill="currentColor" fill-rule="evenodd" d="M48.186 92.137c0-8.392 6.49-14.89 16.264-14.89s29.827-.225 29.827-.225s-.306-6.99-.306-15.88c0-8.888 7.954-14.96 17.49-14.96c9.538 0 56.786.401 61.422.401c4.636 0 8.397 1.719 13.594 5.67c5.196 3.953 13.052 10.56 16.942 14.962c3.89 4.402 5.532 6.972 5.532 10.604c0 3.633 0 76.856-.06 85.34c-.059 8.485-7.877 14.757-17.134 14.881c-9.257.124-29.135.124-29.135.124s.466 6.275.466 15.15s-8.106 15.811-17.317 16.056c-9.21.245-71.944-.49-80.884-.245c-8.94.245-16.975-6.794-16.975-15.422s.274-93.175.274-101.566m16.734 3.946l-1.152 92.853a3.96 3.96 0 0 0 3.958 4.012l73.913.22a3.865 3.865 0 0 0 3.91-3.978l-.218-8.892a1.988 1.988 0 0 0-2.046-1.953s-21.866.64-31.767.293c-9.902-.348-16.672-6.807-16.675-15.516c-.003-8.709.003-69.142.003-69.142a1.989 1.989 0 0 0-2.007-1.993l-23.871.082a4.077 4.077 0 0 0-4.048 4.014m106.508-35.258c-1.666-1.45-3.016-.84-3.016 1.372v17.255c0 1.106.894 2.007 1.997 2.013l20.868.101c2.204.011 2.641-1.156.976-2.606zm-57.606.847a2.002 2.002 0 0 0-2.02 1.988l-.626 96.291a2.968 2.968 0 0 0 2.978 2.997l75.2-.186a2.054 2.054 0 0 0 2.044-2.012l1.268-62.421a1.951 1.951 0 0 0-1.96-2.004s-26.172.042-30.783.042c-4.611 0-7.535-2.222-7.535-6.482S152.3 63.92 152.3 63.92a2.033 2.033 0 0 0-2.015-2.018z"></path></svg>
+                            </button>
+
+              </div>
+            `;
           }
         });
-        html += `</div>`;
+
+        html += `</div>`; // .package-details
       }
 
-      html += `</div>`;
+      html += `</div>`; // .client-card
     });
   }
 
   html += `</div></div>`;
   return html;
 }
+
 
 // ---------- Модал: добавление записи ----------
 function openAddBookingModal(dateISO, hour) {
@@ -1088,7 +1127,7 @@ function openPackageModal(prefill) {
 
 function renderPackageModal() {
   return `
-    <div class="modal-overlay" data-action="close-package-modal">
+    <div class="modal-overlay" data-role="overlay">
       <div class="modal">
         <h3>Добавить пакет</h3>
         <input type="text"
@@ -1270,14 +1309,7 @@ document.addEventListener("click", async (e) => {
   console.log("🔥 CLICK:", action);
 
   switch (action) {
-    case "overlay-click":
-      if (e.target.classList.contains("modal-overlay")) {
-        state.modalOpen = false;
-        state.packageModalOpen = false;
-        state.confirm.open = false;
-        render();
-      }
-      break;
+
 
     case "confirm-cancel":
       state.confirm = { open: false, title: "", type: null, bookingId: null };
@@ -1351,8 +1383,167 @@ document.addEventListener("click", async (e) => {
     case "remove-client":
       await requestRemoveClient(el.dataset.client);
       break;
+
+
+
+// --- ------------клик копировать ------------------
+
+        case "copy-sessions": {
+          const text = el.dataset.text || "";
+          try {
+            await navigator.clipboard.writeText(text);
+
+            // 💥 Вибрация при успешном копировании
+            if (window.Capacitor?.Plugins?.Haptics) {
+              await window.Capacitor.Plugins.Haptics.impact({ style: "light" });
+            } else if ("vibrate" in navigator) {
+              navigator.vibrate(30);
+            }
+
+            // ✨ Эффект успешного копирования
+            el.classList.add("copied");
+            setTimeout(() => el.classList.remove("copied"), 600);
+
+            // ✅ Показываем тост "Скопировано!"
+            showToast("Скопировано!");
+          } catch (err) {
+            showToast("Не удалось скопировать 😕");
+          }
+          break;
+        }
+
+
   }
+
+   // безопасное закрытие модалок при клике в фон
+      document.addEventListener("click", (e) => {
+        const overlay = e.target.closest(".modal-overlay");
+        const modal = e.target.closest(".modal");
+        if (overlay && !modal) {
+          // закрываем только если кликнули по фону
+          state.modalOpen = false;
+          state.packageModalOpen = false;
+          state.confirm.open = false;
+          render();
+        }
+      });
 });
+// --- ------------------------------
+// --- свап .client-card ---
+// ----------------------------------------
+(() => {
+  const OPEN_X = -88;
+  let startX = 0;
+  let currentX = 0;
+  let dragging = false;
+  let card = null;
+  let header = null;
+  let openedCard = null;
+
+  function closeCard(c) {
+    if (!c) return;
+    const h = c.querySelector(".client-card-header");
+    if (!h) return;
+    h.style.transition = "transform .25s cubic-bezier(.22,1,.36,1)";
+    h.style.transform = "translateX(0)";
+    c.classList.remove("swiped");
+  }
+
+  function openCard(c) {
+    const h = c.querySelector(".client-card-header");
+    if (!h) return;
+    h.style.transition = "transform .25s cubic-bezier(.22,1,.36,1)";
+    h.style.transform = `translateX(${OPEN_X}px)`;
+    c.classList.add("swiped");
+    openedCard = c;
+  }
+
+  document.addEventListener("touchstart", (e) => {
+    const h = e.target.closest(".client-card-header");
+    if (!h) return;
+
+    card = h.closest(".client-card");
+    header = h;
+
+    if (openedCard && openedCard !== card) closeCard(openedCard);
+
+    startX = e.touches[0].clientX;
+    currentX = 0;
+    dragging = true;
+    header.style.transition = "none";
+  }, { passive: true });
+
+  document.addEventListener("touchmove", (e) => {
+    if (!dragging || !header) return;
+
+    const dx = e.touches[0].clientX - startX;
+    if (Math.abs(dx) > 8) e.preventDefault();
+    const x = Math.min(0, Math.max(OPEN_X, dx + (card.classList.contains("swiped") ? OPEN_X : 0)));
+    header.style.transform = `translateX(${x}px)`;
+    currentX = x;
+  }, { passive: false });
+
+  document.addEventListener("touchend", async (e) => {
+    if (!dragging || !header || !card) return;
+    header.style.transition = "transform .25s cubic-bezier(.22,1,.36,1)";
+
+    if (currentX < OPEN_X / 2) {
+      openCard(card);
+      try {
+        if (window.Capacitor?.Plugins?.Haptics) {
+          await window.Capacitor.Plugins.Haptics.impact({ style: "light" });
+        } else if ("vibrate" in navigator) {
+          navigator.vibrate(20);
+        }
+      } catch {}
+    } else {
+      closeCard(card);
+      if (openedCard === card) openedCard = null;
+    }
+
+    dragging = false;
+    header = null;
+    card = null;
+    currentX = 0;
+  }, { passive: true });
+
+  // тап по хедеру закрывает открытую карточку
+  document.addEventListener("click", (e) => {
+    const h = e.target.closest(".client-card-header");
+    if (!h) return;
+    const c = h.closest(".client-card");
+    if (!c) return;
+    if (c.classList.contains("swiped")) {
+      closeCard(c);
+      openedCard = null;
+      e.stopPropagation();
+      e.preventDefault();
+    }
+  }, true);
+
+  document.addEventListener("click", (e) => {
+    if (openedCard && !e.target.closest(".client-card")) {
+      closeCard(openedCard);
+      openedCard = null;
+    }
+  });
+})();
+
+// --- ------------------------------
+// --- осообщения внизу ---
+// ----------------------------------------
+function showToast(message) {
+  const toast = document.createElement("div");
+  toast.textContent = message;
+  toast.className = "toast-message";
+  document.body.appendChild(toast);
+
+  requestAnimationFrame(() => toast.classList.add("visible"));
+  setTimeout(() => {
+    toast.classList.remove("visible");
+    setTimeout(() => toast.remove(), 300);
+  }, 1200);
+}
 
 // --- ------------------------------
 // --- обрезка имени ---
@@ -1385,3 +1576,64 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 
+// === Плавающая кнопка с анимирующимися SVG ===
+
+// безопасная функция для прорисовки иконок
+function setIconFor(page) {
+  const $cal = document.getElementById("icon-calendar");
+  const $peo = document.getElementById("icon-people");
+
+  // если по какой-то причине нет svg — выходим, чтобы не было ошибки
+  if (!$cal || !$peo) {
+    console.warn("FAB SVG elements not found");
+    return;
+  }
+
+  // показываем нужную иконку
+  const show = (page === "calendar") ? $peo : $cal;
+  const hide = (show === $peo) ? $cal : $peo;
+
+  hide.classList.remove("active", "draw");
+  show.classList.add("active");
+
+  // сбрасываем и снова включаем анимацию "прорисовки"
+  void show.offsetWidth;
+  show.classList.add("draw");
+}
+
+// основная установка FAB-кнопки
+function installAnimatedFab() {
+  const fab = document.getElementById("fab-toggle");
+  if (!fab) {
+    console.warn("FAB button not found in DOM");
+    return;
+  }
+
+  fab.addEventListener("click", () => {
+    const targetPage = (currentPage === "calendar") ? "clients" : "calendar";
+
+    // меняем текущую страницу
+    currentPage = targetPage;
+    document.querySelectorAll(".nav-btn").forEach(b => b.classList.remove("active"));
+    document.querySelector(`[data-page='${targetPage}']`)?.classList.add("active");
+    render();
+
+    setIconFor(currentPage);
+
+    // лёгкий отклик
+    try {
+      if (window.Capacitor?.Plugins?.Haptics)
+        window.Capacitor.Plugins.Haptics.impact({ style: "light" });
+      else if ("vibrate" in navigator)
+        navigator.vibrate(20);
+    } catch {}
+  });
+
+  // показать актуальную иконку при запуске
+  setIconFor(currentPage);
+}
+
+// ждём, пока страница загрузится
+document.addEventListener("DOMContentLoaded", () => {
+  installAnimatedFab();
+});
