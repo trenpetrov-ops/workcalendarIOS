@@ -497,38 +497,6 @@ function render() {
   const app = document.getElementById("app");
   if (!app) return;
 
-    // 🛡️ Анти-тап защита при появлении модалок
-      if (!window._modalTouchBlockerSet) {
-        window._modalTouchBlockerSet = true;
-        const observer = new MutationObserver(() => {
-          const hasModal = document.querySelector(".modal-overlay, .modal");
-          if (hasModal) {
-            // Добавляем временный блокер касаний, как в iOS UIKit
-            const blocker = document.createElement("div");
-            blocker.style.cssText = `
-              position: fixed;
-              inset: 0;
-              background: transparent;
-              z-index: 9999;
-              pointer-events: auto;
-            `;
-            const isCapacitor = !!window.Capacitor;
-            if (isCapacitor) {
-              setTimeout(() => {
-                document.body.appendChild(blocker);
-                setTimeout(() => blocker.remove(), 300);
-              }, 20);
-            }
-
-
-          }
-        });
-        observer.observe(document.body, { childList: true, subtree: true });
-      }
-
-
-
-
   if (currentPage === "calendar") {
     app.innerHTML = `
       ${renderHeader()}
@@ -547,8 +515,33 @@ function render() {
       ${state.confirm.open ? renderConfirmModal() : ""}
     `;
   }
-}
 
+  // ----вызов защиты модалки
+    if (state.modalOpen || state.packageModalOpen || state.confirm.open) {
+      protectFreshModals();
+    }
+
+}
+// --------------------- защита модалки
+
+function protectFreshModals() {
+  const overlays = document.querySelectorAll(".modal-overlay");
+  overlays.forEach((overlay) => {
+    if (overlay.dataset.protected) return; // уже обработали
+
+    overlay.dataset.protected = "1";
+    const modal = overlay.querySelector(".modal");
+
+    // временно блокируем любые тапы по модалке и оверлею
+    overlay.style.pointerEvents = "none";
+    if (modal) modal.style.pointerEvents = "none";
+
+    setTimeout(() => {
+      overlay.style.pointerEvents = "";
+      if (modal) modal.style.pointerEvents = "";
+    }, 220); // 0.22с — достаточно, чтобы палец успел отжаться
+  });
+}
 
 
 function renderHeader() {
