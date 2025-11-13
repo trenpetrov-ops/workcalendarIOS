@@ -738,7 +738,7 @@ button.copy-btn {
   overflow: visible; /* чтобы popup не обрезался */
   transition: transform 0.1s ease, box-shadow 0.1s ease;
   transform-origin: center center;
-  padding: 0px 2px;
+  padding: 1px 5px;
 }
 
 /* 🔹 стандартный отклик при тапе */
@@ -854,10 +854,12 @@ button.copy-btn {
 /* Плавающая кнопка */
 .fab-btn{
   position: fixed;
-  right: 35px;
-  bottom: 35px;
-  /* width: 60px; */
-  /* height: 64px; */
+  margin: 0 auto;
+  width: 59px;
+  bottom: 28px;
+  right: 0;
+  left: 0;
+  height: 59px;
   border: 0;
   border-radius: 50%;
   background: none;
@@ -910,7 +912,7 @@ button.copy-btn {
 
 /* 🌞 Подсветка записей на сегодняшний день */
 .booking-today {
-  background: #e2af87;
+  background: #eea86f;
 }
 
 @keyframes pulseBooking {
