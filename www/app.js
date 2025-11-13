@@ -1246,6 +1246,9 @@ document.addEventListener("click", (e) => {
   const btn = e.target.closest("[data-page]");
   if (!btn) return;
 
+ // ВИБРАЦИЯ 👇👇👇
+  await hapticTap();
+
   document.querySelectorAll(".nav-btn").forEach(b => b.classList.remove("active"));
   btn.classList.add("active");
 
@@ -1576,64 +1579,73 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 
+
+
+// === вибрация ===
+
+async function hapticTap() {
+  try {
+    if (window.Capacitor?.Plugins?.Haptics) {
+      await window.Capacitor.Plugins.Haptics.impact({ style: "light" });
+    } else if ("vibrate" in navigator) {
+      navigator.vibrate(20);
+    }
+  } catch (err) {
+    console.warn("Haptics error:", err);
+  }
+}
+
+
+
 // === Плавающая кнопка с анимирующимися SVG ===
 
-// безопасная функция для прорисовки иконок
-function setIconFor(page) {
-  const $cal = document.getElementById("icon-calendar");
-  const $peo = document.getElementById("icon-people");
+function togglePage() {
+  currentPage = (currentPage === "calendar") ? "clients" : "calendar";
 
-  // если по какой-то причине нет svg — выходим, чтобы не было ошибки
-  if (!$cal || !$peo) {
-    console.warn("FAB SVG elements not found");
-    return;
-  }
+  document.querySelectorAll(".nav-btn").forEach(b => b.classList.remove("active"));
+  document.querySelector(`[data-page='${currentPage}']`)?.classList.add("active");
 
-  // показываем нужную иконку
-  const show = (page === "calendar") ? $peo : $cal;
-  const hide = (show === $peo) ? $cal : $peo;
-
-  hide.classList.remove("active", "draw");
-  show.classList.add("active");
-
-  // сбрасываем и снова включаем анимацию "прорисовки"
-  void show.offsetWidth;
-  show.classList.add("draw");
+  render();
 }
 
-// основная установка FAB-кнопки
-function installAnimatedFab() {
-  const fab = document.getElementById("fab-toggle");
-  if (!fab) {
-    console.warn("FAB button not found in DOM");
-    return;
-  }
 
-  fab.addEventListener("click", () => {
-    const targetPage = (currentPage === "calendar") ? "clients" : "calendar";
 
-    // меняем текущую страницу
-    currentPage = targetPage;
-    document.querySelectorAll(".nav-btn").forEach(b => b.classList.remove("active"));
-    document.querySelector(`[data-page='${targetPage}']`)?.classList.add("active");
-    render();
 
-    setIconFor(currentPage);
 
-    // лёгкий отклик
-    try {
-      if (window.Capacitor?.Plugins?.Haptics)
-        window.Capacitor.Plugins.Haptics.impact({ style: "light" });
-      else if ("vibrate" in navigator)
-        navigator.vibrate(20);
-    } catch {}
+document.addEventListener('DOMContentLoaded', () => {
+
+  const pluginAnim = lottie.loadAnimation({
+    container: document.getElementById('plugin-icon'),
+    renderer: 'svg',
+    loop: false,
+    autoplay: false,
+    path: './icon-animations/plugin.json'
   });
 
-  // показать актуальную иконку при запуске
-  setIconFor(currentPage);
-}
+  pluginAnim.setSpeed(4);
 
-// ждём, пока страница загрузится
-document.addEventListener("DOMContentLoaded", () => {
-  installAnimatedFab();
+  const pluginBtn = document.getElementById('fab-toggle');
+  let isPlaying = false;
+
+  pluginBtn.addEventListener('click', () => {
+
+    if (isPlaying) return;
+    isPlaying = true;
+
+      // ВИБРАЦИЯ 👇👇👇
+      await hapticTap();
+
+    // Запускаем анимацию FAB
+    pluginAnim.goToAndPlay(0, true);
+
+    // Возврат в последний кадр
+    pluginAnim.addEventListener('complete', () => {
+      isPlaying = false;
+      pluginAnim.pause();
+    });
+
+    // Переключаем страницу
+    togglePage();
+  });
+
 });
