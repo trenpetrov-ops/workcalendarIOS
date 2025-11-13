@@ -1246,8 +1246,8 @@ document.addEventListener("click", (e) => {
   const btn = e.target.closest("[data-page]");
   if (!btn) return;
 
- // ВИБРАЦИЯ 👇👇👇
-  await hapticTap();
+  // лёгкая вибрация при выборе пункта меню
+  hapticTap();
 
   document.querySelectorAll(".nav-btn").forEach(b => b.classList.remove("active"));
   btn.classList.add("active");
@@ -1255,7 +1255,6 @@ document.addEventListener("click", (e) => {
   currentPage = btn.dataset.page;
   render();
 });
-
 
 // ---- панель под календарем ----
 function renderActiveClientsBar() {
@@ -1627,25 +1626,23 @@ document.addEventListener('DOMContentLoaded', () => {
   const pluginBtn = document.getElementById('fab-toggle');
   let isPlaying = false;
 
-  pluginBtn.addEventListener('click', () => {
+ pluginBtn.addEventListener('click', () => {
+   if (isPlaying) return;
+   isPlaying = true;
 
-    if (isPlaying) return;
-    isPlaying = true;
+   // просто запускаем, не ждём
+   hapticTap();
 
-      // ВИБРАЦИЯ 👇👇👇
-      await hapticTap();
+   // Запускаем анимацию FAB
+   pluginAnim.goToAndPlay(0, true);
 
-    // Запускаем анимацию FAB
-    pluginAnim.goToAndPlay(0, true);
+   pluginAnim.addEventListener('complete', () => {
+     isPlaying = false;
+     pluginAnim.pause();
+   });
 
-    // Возврат в последний кадр
-    pluginAnim.addEventListener('complete', () => {
-      isPlaying = false;
-      pluginAnim.pause();
-    });
-
-    // Переключаем страницу
-    togglePage();
-  });
+   // Переключаем страницу
+   togglePage();
+ });
 
 });
