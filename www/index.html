@@ -2,12 +2,14 @@
 <html lang="ru">
 <head>
     <meta charset="utf-8" />
+
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="theme-color" content="#f9f9f9">
     <title>Trainer Calendar</title>
 
     <link rel="manifest" href="manifest.json">
     <link rel="stylesheet" href="style.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js"></script>
 
 </head>
 <body>
@@ -15,27 +17,10 @@
 
 
 <button id="fab-toggle" class="fab-btn" aria-label="Переключить страницу">
-    <!-- Календарь -->
-    <svg id="icon-calendar" class="icon" width="28" height="28" viewBox="0 0 24 24">
-        <g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="4" width="18" height="18" rx="2" pathLength="1"></rect>
-            <path d="M16 2v4M8 2v4" pathLength="1"></path>
-            <path d="M3 10h18" pathLength="1"></path>
-            <!-- несколько «клеток» для ощущения сетки -->
-            <path d="M7.5 14h3v3h-3z" pathLength="1"></path>
-            <path d="M13.5 14h3v3h-3z" pathLength="1"></path>
-        </g>
-    </svg>
 
-    <!-- Люди -->
-    <svg id="icon-people" class="icon" width="28" height="28" viewBox="0 0 24 24">
-        <g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M16 11a4 4 0 1 0-8 0a4 4 0 0 0 8 0Z" pathLength="1"></path>
-            <path d="M3 20c.8-3.2 4.3-5 9-5s8.2 1.8 9 5" pathLength="1"></path>
-            <path d="M18.5 10.5a3 3 0 1 0-1.5-5.6" pathLength="1"></path>
-            <path d="M20.8 18.2c-.6-1.9-2.2-3.3-4.3-4" pathLength="1"></path>
-        </g>
-    </svg>
+    <div id="plugin-icon" class="lottie-icon">
+
+    </div>
 </button>
 
 
