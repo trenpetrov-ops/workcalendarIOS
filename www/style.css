@@ -220,9 +220,11 @@ th.bg-yellow, th.bg-gray {
 .bg-red {
   background-color: #f9f9f9;
 }
+th.bg-orange.today-col .date, th.bg-orange.today-col .weekday,
 th.bg-red.today-col .date, th.bg-red.today-col .weekday {
     color: #bf5704;
 }
+
 span.date {
     display: block;
     font-size: 14px;
