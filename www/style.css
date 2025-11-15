@@ -225,6 +225,7 @@ th.bg-red.today-col .date, th.bg-red.today-col .weekday {
     color: #bf5704;
 }
 
+
 span.date {
     display: block;
     font-size: 14px;
@@ -491,7 +492,10 @@ button.copy-btn {
     font-size: 11px;
     color: #212c3b;
 }
-
+p.modal-subtext {
+    margin-bottom: 14px;
+    color: #c64a4d;
+}
 .modal input, .modal select {
     width: 100%;
     padding: 6px 6px;
@@ -817,7 +821,7 @@ button.copy-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #e7e7ef;
+  background: #f6f5f5;
   z-index: 1; /* ниже хедера */
   pointer-events: none;
 }
