@@ -10,8 +10,10 @@ import {
   onSnapshot,
   query,
   where,
-  getDocs
+  getDocs,
+  getDoc // ← ДОБАВИЛИ ВОТ ЭТО
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
+
 
 // ---------- Мини-замена date-fns ----------
 function addDays(date, days) {
@@ -104,12 +106,15 @@ const state = {
   expandedPackages: {},
 
   // модал подтверждения удаления
-  confirm: {
-    open: false,
-    title: "",
-    type: null,
-    bookingId: null
-  }
+confirm: {
+  open: false,
+  title: "",
+  message: "",
+  type: null,       // booking | package | client
+  bookingId: null,  // id брони
+  itemId: null      // id пакета/клиента
+}
+
 };
 
 
@@ -425,8 +430,11 @@ function closeAllTransient() {
   state.modalOpen = false;
   state.packageModalOpen = false;
   state.selectedBookingId = null;
-  state.confirm = { open: false, title: "", type: null, bookingId: null };
+
+  // ❗ confirm НЕ трогаем!
+  state.confirm.open = false;
 }
+
 
 function weekDays(baseDate) {
   const start = startOfWeekFor(baseDate);
@@ -975,17 +983,45 @@ function openConfirmDeleteBooking(id) {
   };
   render();
 }
+// ---------- Добавляем модалку для удаления ПАКЕТА ----------
+function openConfirmDeletePackage(client, pid) {
+  state.confirm = {
+    open: true,
+    type: "package",
+    itemId: pid,
+    title: `Удалить пакет клиента - ${client} ?`,
+
+    message: `При удалении пакета записи останутся`
+  };
+  render();
+}
+// ---------- Добавляем модалку для удаления КЛИЕНТА----------
+function openConfirmDeleteClient(client) {
+  state.confirm = {
+    open: true,
+    type: "client",
+    itemId: client,
+    title: `Удалить клиента - ${client}?`,
+    message: `При удалении клиента пакеты и записи будут удалены!`
+  };
+  render();
+}
+
+
+
 
 function renderConfirmModal() {
   return `
     <div class="modal-overlay" data-action="overlay-click">
       <div class="modal" data-role="confirm-modal">
-        <h3>${escapeHtml(state.confirm.title || "Удалить запись?")}</h3>
+        <h3>${escapeHtml(state.confirm.title || "Подтверждение")}</h3>
+        <p class="modal-subtext">${escapeHtml(state.confirm.message || "")}</p>
+
         <div class="modal-actions">
           <button class="btn-gray" data-action="confirm-cancel">Отмена</button>
           <button class="btn-red"
                   data-action="confirm-ok"
-                  data-id="${state.confirm.bookingId || ''}">
+                  data-id="${state.confirm.itemId || state.confirm.bookingId || ''}">
             Удалить
           </button>
         </div>
@@ -997,31 +1033,65 @@ function renderConfirmModal() {
 
 
 
+
 async function handleConfirmOk(e) {
-  // Если функцию вызвали не напрямую из события, пробуем взять event из window
-  const event = e || window._lastClickEvent;
-  const btn = event?.target?.closest("[data-id]");
-  const id = btn?.dataset.id || state.confirm.bookingId;
+  const id = state.confirm.itemId || state.confirm.bookingId;
+  const type = state.confirm.type;
 
-  console.log("✅ confirm-ok clicked", { id, state: state.confirm });
+  console.log("🔥 confirm-ok:", type, id);
 
-  if (!id) {
-    console.warn("⚠️ Нет bookingId");
-    state.confirm = { open: false, title: "", type: null, bookingId: null };
+  if (!id || !type) {
+    console.warn("❌ confirm: нет id или типа", state.confirm);
+    state.confirm = { open: false, title: "", type: null, bookingId: null, itemId: null };
     render();
     return;
   }
 
-  // Закрываем модалку
-  state.confirm = { open: false, title: "", type: null, bookingId: null };
+  // Закрыть модалку
+  state.confirm = { open: false, title: "", type: null, bookingId: null, itemId: null };
   render();
 
   try {
-    await deleteBookingAndReindex(id);
-    console.log("🗑 Удалено бронирование:", id);
+    switch (type) {
+      case "booking":
+        await deleteBookingAndReindex(id);
+        break;
+
+      case "package":
+        await requestRemovePackageForce(id);
+        break;
+
+      case "client":
+        await requestRemoveClientForce(id);
+        break;
+    }
   } catch (err) {
-    console.error("❌ Ошибка при удалении:", err);
-    alert("Ошибка удаления, см. консоль");
+    console.error("❌ Ошибка:", err);
+    alert("Ошибка удаления");
+  }
+}
+
+
+// Мини-обёртки для удаления
+async function requestRemovePackageForce(pid) {
+  await deleteDoc(doc(db, "packages", pid));
+}
+
+async function requestRemoveClientForce(client) {
+  // удаление пакетов
+  const pkgList = packages.filter(p =>
+    p.clientName === client ||
+    (Array.isArray(p.clientNames) && p.clientNames.includes(client))
+  );
+  for (const p of pkgList) {
+    await deleteDoc(doc(db, "packages", p.id));
+  }
+
+  // удаление всех бронирований
+  const qb = query(collection(db, "bookings"), where("clientName", "==", client));
+  const snap = await getDocs(qb);
+  for (const b of snap.docs) {
+    await deleteDoc(doc(db, "bookings", b.id));
   }
 }
 
@@ -1054,7 +1124,16 @@ async function deleteBookingAndReindex(id) {
     return;
   }
 
-  // 3. Пересчитываем оставшиеся тренировки пакета
+  const packageRef = doc(db, "packages", b.packageId);
+  const packageSnap = await getDoc(packageRef);
+
+  // 3. Если пакет уже удалён → пересчёт НЕ делаем
+  if (!packageSnap.exists()) {
+    console.warn("⚠ Пакет уже удалён, пересчёт пропускаем:", b.packageId);
+    return;
+  }
+
+  // 4. Пересчитываем оставшиеся тренировки пакета
   try {
     const q = query(
       collection(db, "bookings"),
@@ -1080,16 +1159,17 @@ async function deleteBookingAndReindex(id) {
     );
 
     // обновляем used в пакете
-    await updateDoc(doc(db, "packages", b.packageId), {
+    await updateDoc(packageRef, {
       used: remaining.length
     });
 
     console.log("✅ Пересчёт пакета завершён");
   } catch (err) {
     console.error("❌ Ошибка пересчёта пакета:", err);
-    // тут НЕ падаем, запись уже удалена
+    // не падаем — запись уже удалена
   }
 }
+
 
 
 
@@ -1307,129 +1387,158 @@ document.addEventListener("click", async (e) => {
   if (!el) return;
 
   const action = el.dataset.action;
-   window._lastClickEvent = e; // <-- добавляем эту строку
+  window._lastClickEvent = e;
   console.log("🔥 CLICK:", action);
 
   switch (action) {
 
-
+    // ----- CANCEL -----
     case "confirm-cancel":
-      state.confirm = { open: false, title: "", type: null, bookingId: null };
+      await haptic("rigid");
+      state.confirm = {
+        open: false,
+        title: "",
+        message: "",
+        type: null,
+        bookingId: null,
+        itemId: null
+      };
       render();
       break;
 
+    // ----- DELETE CONFIRMED -----
     case "confirm-ok":
-       await handleConfirmOk(e); // <-- передаём e
+      await haptic("rigid");
+      await handleConfirmOk(e);
       break;
 
+    // ----- SWIPE WEEK soft -----
     case "prev-week":
+      await haptic("soft");
       state.anchorDate = subWeeks(state.anchorDate, 1);
       closeAllTransient();
       render();
       break;
 
     case "next-week":
+      await haptic("soft");
       state.anchorDate = addWeeks(state.anchorDate, 1);
       closeAllTransient();
       render();
       break;
 
+    // ----- TODAY rigid -----
     case "today":
+      await haptic("rigid");
       state.anchorDate = new Date();
       closeAllTransient();
       render();
       break;
 
+    // ----- CLOSE MODAL -----
     case "close-add-booking":
+      await haptic("rigid");
       state.modalOpen = false;
       render();
       break;
 
+    // ----- SAVE BOOKING rigid -----
     case "save-booking":
+      await haptic("rigid");
       await addBooking();
       break;
 
+    // ----- DELETE BOOKING -----
     case "confirm-delete-booking":
+      await haptic("rigid");
       openConfirmDeleteBooking(el.dataset.id);
       break;
 
+    // ----- OPEN PACKAGE MODAL rigid -----
     case "open-package-modal-main":
+      await haptic("rigid");
       openPackageModal("");
       break;
 
     case "open-package-modal-client":
+      await haptic("rigid");
       openPackageModal(el.dataset.client || "");
       break;
 
+    // ----- CLOSE PACKAGE MODAL rigid -----
     case "close-package-modal":
+      await haptic("rigid");
       state.packageModalOpen = false;
       render();
       break;
 
+    // ----- SAVE PACKAGE rigid -----
     case "save-package":
+      await haptic("rigid");
       await savePackage();
       break;
 
+    // ----- EXPAND CLIENT soft -----
     case "toggle-client-expand":
+      await haptic("soft");
       toggleClientExpand(el.dataset.client);
       break;
 
+    // ----- EXPAND PACKAGE soft -----
     case "toggle-package-expand":
+      await haptic("soft");
       togglePackageExpand(el.dataset.pid);
       break;
 
+    // ----- REMOVE PACKAGE rigid -----
     case "remove-package":
-      await requestRemovePackage(el.dataset.client, el.dataset.pid);
+      await haptic("rigid");
+      openConfirmDeletePackage(el.dataset.client, el.dataset.pid);
       break;
 
+    // ----- REMOVE CLIENT rigid -----
     case "remove-client":
-      await requestRemoveClient(el.dataset.client);
+      await haptic("rigid");
+      openConfirmDeleteClient(el.dataset.client);
       break;
 
+    // ----- COPY soft -----
+    case "copy-sessions": {
+      await haptic("soft");
+      const text = el.dataset.text || "";
+      try {
+        await navigator.clipboard.writeText(text);
 
+        el.classList.add("copied");
+        setTimeout(() => el.classList.remove("copied"), 600);
 
-// --- ------------клик копировать ------------------
-
-        case "copy-sessions": {
-          const text = el.dataset.text || "";
-          try {
-            await navigator.clipboard.writeText(text);
-
-            // 💥 Вибрация при успешном копировании
-            if (window.Capacitor?.Plugins?.Haptics) {
-              await window.Capacitor.Plugins.Haptics.impact({ style: "light" });
-            } else if ("vibrate" in navigator) {
-              navigator.vibrate(30);
-            }
-
-            // ✨ Эффект успешного копирования
-            el.classList.add("copied");
-            setTimeout(() => el.classList.remove("copied"), 600);
-
-            // ✅ Показываем тост "Скопировано!"
-            showToast("Скопировано!");
-          } catch (err) {
-            showToast("Не удалось скопировать 😕");
-          }
-          break;
-        }
-
+        showToast("Скопировано!");
+      } catch (err) {
+        showToast("Не удалось скопировать 😕");
+      }
+      break;
+    }
 
   }
-
-   // безопасное закрытие модалок при клике в фон
-      document.addEventListener("click", (e) => {
-        const overlay = e.target.closest(".modal-overlay");
-        const modal = e.target.closest(".modal");
-        if (overlay && !modal) {
-          // закрываем только если кликнули по фону
-          state.modalOpen = false;
-          state.packageModalOpen = false;
-          state.confirm.open = false;
-          render();
-        }
-      });
 });
+
+// Совместимость для старого вызова — чтобы кнопка меню снова работала
+async function hapticTap() {
+  return haptic("soft"); // или "rigid", если хочешь щелчок
+}
+
+
+
+  // безопасное закрытие модалок при клике в фон
+document.addEventListener("click", (e) => {
+  if (e.target.classList.contains("modal-overlay")) {
+    state.modalOpen = false;
+    state.packageModalOpen = false;
+    state.confirm.open = false;
+    render();
+  }
+});
+
 // --- ------------------------------
 // --- свап .client-card ---
 // ----------------------------------------
@@ -1582,10 +1691,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
 // === вибрация ===
 
-async function hapticTap() {
+async function haptic(style = "light") {
   try {
     if (window.Capacitor?.Plugins?.Haptics) {
-      await window.Capacitor.Plugins.Haptics.impact({ style: "light" });
+      await window.Capacitor.Plugins.Haptics.impact({ style });
     } else if ("vibrate" in navigator) {
       navigator.vibrate(20);
     }
@@ -1593,6 +1702,7 @@ async function hapticTap() {
     console.warn("Haptics error:", err);
   }
 }
+
 
 
 
@@ -1646,3 +1756,5 @@ document.addEventListener('DOMContentLoaded', () => {
  });
 
 });
+
+
