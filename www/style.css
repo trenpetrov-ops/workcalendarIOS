@@ -129,6 +129,13 @@ button {
   margin-bottom: 11px;
   margin-left: 14px;
 }
+.today:active,
+.client-delete-btn:active,
+.client-actions:active,
+.copy-btn:active,
+.package-remove-btn:active,
+.package-line div:active,
+.btn-green:active svg,
 .calendar-header-right button:active,
 .btn-red:active,
 .btn-blue:active,
@@ -136,6 +143,12 @@ button {
     transform: scale(1.05);
     transition: transform 0.2s ease;
 
+}
+
+.client-name:active{
+
+    transition: transform 0.2s ease;
+    transform: scale(1.05) translateX(5px);
 }
 /* Заголовок */
 
