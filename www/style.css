@@ -677,6 +677,7 @@ p.modal-subtext {
   overflow: visible; /* чтобы popup не обрезался */
   transition: transform 0.1s ease, box-shadow 0.1s ease;
   transform-origin: center center;
+  z-index: 2; 
 }
 
 /* 🔹 стандартный отклик при тапе */
@@ -847,7 +848,11 @@ p.modal-subtext {
 .booking-today {
   background: #eea86f;
 }
-
-
+/* 🌞 исчезает меню при модалке */
+.fab-btn.hide-under-modal {
+  position: static !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
 
 
