@@ -528,6 +528,7 @@ function render() {
     if (state.modalOpen || state.packageModalOpen || state.confirm.open) {
       protectFreshModals();
     }
+    updateFabVisibility();
 
 }
 // --------------------- защита модалки
@@ -549,6 +550,20 @@ function protectFreshModals() {
       if (modal) modal.style.pointerEvents = "";
     }, 220); // 0.22с — достаточно, чтобы палец успел отжаться
   });
+}
+
+
+
+// === скрытие FAB во время модалок (решение бага iOS) ===
+function updateFabVisibility() {
+  const fab = document.getElementById("fab-toggle");
+  if (!fab) return;
+
+  if (state.modalOpen || state.packageModalOpen || state.confirm.open) {
+    fab.classList.add("hide-under-modal");
+  } else {
+    fab.classList.remove("hide-under-modal");
+  }
 }
 
 
@@ -1756,3 +1771,5 @@ document.addEventListener('DOMContentLoaded', () => {
  });
 
 });
+
+
