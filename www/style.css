@@ -481,7 +481,7 @@ button.copy-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 99999 !important;
+  z-index: 50;
 }
 
 .modal {
@@ -621,42 +621,6 @@ p.modal-subtext {
   table-layout: fixed;
 }
 
-
-
-
-
-/* === Нижнее меню === */
-.bottom-nav {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  width: 100%;
-  display: flex;
-  justify-content: space-around;
-  background: white;
-  border-top: 1px solid #ccc;
-  padding: 8px 0;
-  z-index: 999;
-}
-
-.nav-btn {
-  flex: 1;
-  background: none;
-  border: none;
-  font-size: 16px;
-  color: #666;
-  padding: 10px 0;
-  transition: color 0.2s, background 0.2s;
-}
-
-.nav-btn.active {
-  color: #0078d7;
-  font-weight: bold;
-}
-
-.nav-btn:active {
-  background: rgba(0,0,0,0.05);
-}
 /* === нав бар === */
 .active-clients-bar {
   background: #f9f9f9;
@@ -855,21 +819,6 @@ p.modal-subtext {
 
 
 
-.bottom-nav {
-  display: none !important;
-}
-.fab-btn {
-}
-
-.fab-btn:hover {
-}
-
-.fab-btn:active {
-  transform: scale(0.95);
-}
-
-
-
 /* Плавающая кнопка */
 .fab-btn{
   position: fixed;
@@ -884,47 +833,12 @@ p.modal-subtext {
   background: none;
   color: #3f525f;
   cursor: pointer;
-  z-index: 3;              /* выше нижнего меню */
+  z-index: 15;              /* выше нижнего меню */
   display: grid;
   place-items: center;
   transition: transform .2s ease, box-shadow .2s ease;
 }
-.fab-btn:active{ transform: scale(.96); }
 
-/* SVG-иконки внутри кнопки */
-.fab-btn .icon{
-  position: absolute;    /* обе лежат друг над другом */
-  opacity: 0;
-  transition: opacity .2s ease;
-}
-
-/* Активная иконка видима */
-.fab-btn .icon.active{ opacity: 1; }
-
-/* Эффект «прорисовки» линий */
-.fab-btn .icon g > *{
-  stroke-dasharray: 1;       /* потому что pathLength="1" */
-  stroke-dashoffset: 1;
-  transition: stroke-dashoffset .6s cubic-bezier(.25,1,.5,1);
-}
-
-/* Когда добавляем класс .draw — линии дорисовываются */
-.fab-btn .icon.draw g > *{ stroke-dashoffset: 0; }
-
-/* Уважать системные настройки */
-@media (prefers-reduced-motion: reduce){
-  .fab-btn, .fab-btn .icon, .fab-btn .icon g > *{
-    transition: none !important;
-  }
-}
-
-/* Твоё нижнее меню остаётся как было.
-   Если нужно, можешь закрепить его поверх контента: */
-.bottom-nav{
-  position: fixed;
-  left: 0; right: 0; bottom: 0;
-  z-index: 10;
-}
 
 
 
@@ -934,9 +848,6 @@ p.modal-subtext {
   background: #eea86f;
 }
 
-@keyframes pulseBooking {
-  0%, 100% { box-shadow: 0 0 6px rgba(255, 215, 0, 0.6); }
-  50% { box-shadow: 0 0 14px rgba(255, 215, 0, 1); }
-}
+
 
 
