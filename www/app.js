@@ -1382,30 +1382,6 @@ document.body.addEventListener("click", (e) => {
 
 
 
-async function haptic(type = "soft") {
-  try {
-    const H = window.Capacitor?.Plugins?.SelectionHaptics;
-
-    if (H) {
-      if (type === "keyboard") return H.keyboard();
-      if (type === "rigid") return H.rigid();
-      return H.soft();
-    }
-
-    // fallback
-    navigator.vibrate?.(type === "rigid" ? 40 : 20);
-  } catch (e) {
-    console.warn("HAPTIC ERROR:", e);
-  }
-}
-
-
-
-
-
-
-
-
 document.addEventListener("click", async (e) => {
   const el = e.target.closest("[data-action]");
   if (!el) return;
@@ -1504,13 +1480,13 @@ document.addEventListener("click", async (e) => {
 
     // ----- EXPAND CLIENT soft -----
     case "toggle-client-expand":
-      await haptic("keyboard");
+      await haptic("soft");
       toggleClientExpand(el.dataset.client);
       break;
 
     // ----- EXPAND PACKAGE soft -----
     case "toggle-package-expand":
-      await haptic("keyboard");
+      await haptic("soft");
       togglePackageExpand(el.dataset.pid);
       break;
 
@@ -1528,7 +1504,7 @@ document.addEventListener("click", async (e) => {
 
     // ----- COPY soft -----
     case "copy-sessions": {
-      await haptic("keyboard");
+      await haptic("soft");
       const text = el.dataset.text || "";
       try {
         await navigator.clipboard.writeText(text);
@@ -1712,6 +1688,20 @@ document.addEventListener("DOMContentLoaded", () => {
 
 
 
+
+// === вибрация ===
+
+async function haptic(style = "light") {
+  try {
+    if (window.Capacitor?.Plugins?.Haptics) {
+      await window.Capacitor.Plugins.Haptics.impact({ style });
+    } else if ("vibrate" in navigator) {
+      navigator.vibrate(20);
+    }
+  } catch (err) {
+    console.warn("Haptics error:", err);
+  }
+}
 
 
 
