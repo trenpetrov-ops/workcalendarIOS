@@ -1,8 +1,5 @@
 {
   "appId": "com.tay.workcalendar",
   "appName": "workcalendar",
-  "webDir": "www",
-  "plugins": {
-    "SelectionHaptics": {}
-  }
+  "webDir": "www"
 }
