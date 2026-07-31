@@ -305,6 +305,22 @@ let swipeX = 0;
 let startX = 0;
 let isDragging = false;
 
+function setCalendarBoundaryVisible(visible, zone = null) {
+  const container = zone?.closest(".calendar-container") ||
+    document.querySelector(".calendar-container");
+  container?.classList.toggle("calendar-moving", visible);
+}
+
+function hideCalendarBoundaryWhenSettled(zone) {
+  if (!zone) return;
+  const onTransitionEnd = (event) => {
+    if (event.target !== zone || event.propertyName !== "transform") return;
+    zone.removeEventListener("transitionend", onTransitionEnd);
+    setCalendarBoundaryVisible(false, zone);
+  };
+  zone.addEventListener("transitionend", onTransitionEnd);
+}
+
 document.addEventListener("touchstart", (e) => {
   const zone = e.target.closest(".calendar-scroll-inner");
   if (!zone) return;
@@ -317,6 +333,9 @@ document.addEventListener("touchmove", (e) => {
   if (!isDragging) return;
   const zone = document.querySelector(".calendar-scroll-inner");
   swipeX = e.touches[0].clientX - startX;
+  if (Math.abs(swipeX) >= 1) {
+    setCalendarBoundaryVisible(true, zone);
+  }
   // сохраняем центральную неделю, добавляем подглядывание соседней
   zone.style.transform = `translateX(calc(-33.333% + ${swipeX}px))`;
 });
@@ -346,8 +365,10 @@ document.addEventListener("touchend", () => {
       const newZone = document.querySelector(".calendar-scroll-inner");
       if (!newZone) return;
 
+      setCalendarBoundaryVisible(true, newZone);
       newZone.style.transition = "none";
       newZone.style.transform = "translateX(0%)"; // новая неделя справа
+      hideCalendarBoundaryWhenSettled(newZone);
 
       requestAnimationFrame(() => {
         newZone.style.transition = `transform ${ANIM_SPEED}s ${EASING}`;
@@ -368,8 +389,10 @@ document.addEventListener("touchend", () => {
       const newZone = document.querySelector(".calendar-scroll-inner");
       if (!newZone) return;
 
+      setCalendarBoundaryVisible(true, newZone);
       newZone.style.transition = "none";
       newZone.style.transform = "translateX(-66.666%)"; // новая неделя слева
+      hideCalendarBoundaryWhenSettled(newZone);
 
       requestAnimationFrame(() => {
         newZone.style.transition = `transform ${ANIM_SPEED}s ${EASING}`;
@@ -380,6 +403,9 @@ document.addEventListener("touchend", () => {
     // Недотянул — просто вернуться
     zone.style.transition = `transform ${ANIM_SPEED}s ${EASING}`;
     zone.style.transform = "translateX(-33.333%)";
+    if (Math.abs(swipeX) >= 1) {
+      hideCalendarBoundaryWhenSettled(zone);
+    }
   }
 
   swipeX = 0;

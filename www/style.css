@@ -229,7 +229,7 @@ th.bg-yellow, th.bg-gray {
 }
 .bg-gray {
   background-color: #f9f9f9;
-  border-right: 1px solid #d1d5db;
+  border-right: none;
 }
 
 .bg-blue {
@@ -347,7 +347,7 @@ th.bg-orange {
   display: flex;
   flex-direction: column;
   margin: 0;
-  padding: max(14px, env(safe-area-inset-top, 0px)) 16px 0;
+  padding: calc(env(safe-area-inset-top, 0px) + 14px) 16px 0;
   box-sizing: border-box;
 }
 
@@ -1535,7 +1535,7 @@ p.modal-subtext {
 }
 
 .time-column-merged {
-  border-right: 1px solid #d1d5db;
+  border-right: none;
 }
 
 .time-settings-modal {
@@ -1740,6 +1740,23 @@ p.modal-subtext {
   backface-visibility: hidden;
 }
 
+.calendar-left::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 4;
+  width: 1px;
+  background: #d1d5db;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.calendar-container.calendar-moving .calendar-left::after {
+  opacity: 1;
+}
+
 /* Таблица времени */
 .fixed-time-table {
   border-collapse: collapse;
@@ -1796,7 +1813,7 @@ p.modal-subtext {
   background: white;
   box-sizing: border-box;
   padding: 0;
-  border-bottom: 1px solid #d1d5db;
+  border-bottom: none;
 }
 /* Пружинка при перетягивании */
 .calendar-scroll.dragging {
