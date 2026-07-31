@@ -8,6 +8,9 @@ body {
 
 :root {
   --calendar-row-height: 24px;
+  --page-safe-top: calc(env(safe-area-inset-top, 0px) + 14px);
+  --page-inline-padding: 16px;
+  --page-topbar-height: 56px;
 }
 
 html, body {
@@ -165,25 +168,34 @@ button {
 }
 /* Заголовок */
 
-header {
+.calendar-header {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   gap: 6px;
-  margin-bottom: 17px;
   flex-direction: row;
-  margin-top: 72px;
+  height: var(--page-topbar-height);
+  margin: 0 0 17px;
+  padding-top: var(--page-safe-top);
+  box-sizing: content-box;
 }
 .calendar-header-left {
-    font-size: 21px;
+    font-size: 20px;
     font-weight: 700;
     padding-left: 9px;
     color: #2b3c51;
+    line-height: 1.2;
 }
 
 .calendar-header-right button {
+    width: 40px;
+    height: 40px;
+    display: grid;
+    place-items: center;
     background: none;
     color: #2b3c51;
-    padding: 0 13px;
+    margin-right: 9px;
+    padding: 0;
 }
 /* Таблица */
 
@@ -347,12 +359,12 @@ th.bg-orange {
   display: flex;
   flex-direction: column;
   margin: 0;
-  padding: calc(env(safe-area-inset-top, 0px) + 14px) 16px 0;
+  padding: var(--page-safe-top) var(--page-inline-padding) 0;
   box-sizing: border-box;
 }
 
 .clients-topbar {
-  flex: 0 0 56px;
+  flex: 0 0 var(--page-topbar-height);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -530,6 +542,14 @@ th.bg-orange {
   color: #77838d;
   font-size: 9px;
   font-weight: 500;
+}
+
+.monthly-support-date b {
+  margin-left: 3px;
+  color: #9a673e;
+  font-size: 8px;
+  font-weight: 650;
+  white-space: nowrap;
 }
 
 .monthly-support-remove {
@@ -1744,17 +1764,12 @@ p.modal-subtext {
   content: "";
   position: absolute;
   top: 0;
-  right: 0;
+  right: -1px;
   bottom: 0;
   z-index: 4;
   width: 1px;
-  background: #d1d5db;
-  opacity: 0;
+  background: #dfe3e6;
   pointer-events: none;
-}
-
-.calendar-container.calendar-moving .calendar-left::after {
-  opacity: 1;
 }
 
 /* Таблица времени */
@@ -2021,6 +2036,7 @@ p.modal-subtext {
   min-height: 66px;
   padding: 7px 11px 7px 14px;
   box-sizing: border-box;
+  gap: 8px;
   cursor: pointer;
 }
 
@@ -2038,6 +2054,24 @@ p.modal-subtext {
   font-size: 10px;
   font-weight: 500;
   white-space: nowrap;
+}
+
+.monthly-support-paid-button {
+  flex: 0 0 auto;
+  min-height: 25px;
+  margin: 0;
+  padding: 4px 7px;
+  border: 1px solid #9db5bf;
+  border-radius: 5px;
+  background: #edf3f5;
+  color: #39586a;
+  font-size: 8.5px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.monthly-support-paid-button:active {
+  background: #dfeaed;
 }
 
 .monthly-support-progress-row {
@@ -2076,6 +2110,49 @@ p.modal-subtext {
   box-sizing: border-box;
 }
 
+.support-details-header {
+  min-height: 27px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.support-details-header h3 {
+  margin-bottom: 8px;
+}
+
+.support-details-header-actions {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+}
+
+.support-edit-dates-button {
+  width: 27px;
+  height: 27px;
+  display: grid;
+  place-items: center;
+  margin: -4px 0 0;
+  padding: 0;
+  border: 1px solid #d3dde1;
+  border-radius: 5px;
+  background: #f4f7f8;
+  color: #4e6d7d;
+}
+
+.support-history-button {
+  min-height: 27px;
+  margin: -4px 0 0;
+  padding: 4px 7px;
+  border: 1px solid #d3dde1;
+  border-radius: 5px;
+  background: #f4f7f8;
+  color: #4e6d7d;
+  font-size: 9px;
+  font-weight: 600;
+}
+
 .support-details-client {
   margin-bottom: 10px;
   color: #223245;
@@ -2099,13 +2176,15 @@ p.modal-subtext {
 }
 
 .support-details-info-row > span {
-  flex: 0 0 auto;
+  min-width: 0;
+  flex: 1 1 auto;
   color: #75818b;
   font-size: 10px;
 }
 
 .support-details-info-row > strong {
   min-width: 0;
+  flex: 0 1 155px;
   color: #34475a;
   font-size: 10px;
   font-weight: 600;
@@ -2150,13 +2229,44 @@ p.modal-subtext {
   box-shadow: 0 0 0 2px rgba(123, 154, 174, 0.18);
 }
 
-.support-start-calendar {
+.support-date-calendar {
   margin: 6px 0 8px;
 }
 
 .support-details-progress {
   padding: 11px 0 10px;
   border-bottom: 1px solid #e0e5e8;
+}
+
+.support-schedule-row {
+  min-height: 22px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  color: #75818b;
+  font-size: 10px;
+}
+
+.support-schedule-row.current {
+  margin-bottom: 7px;
+  color: #526472;
+}
+
+.support-schedule-row strong {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 4px;
+  color: #34475a;
+  font-weight: 600;
+  text-align: right;
+}
+
+.support-schedule-row.current strong {
+  color: #263b4e;
+  font-weight: 650;
 }
 
 .support-details-progress-heading {
@@ -2170,8 +2280,20 @@ p.modal-subtext {
 }
 
 .support-details-progress-heading strong {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 4px;
   color: #34475a;
   font-weight: 600;
+  text-align: right;
+}
+
+.support-shift-note {
+  color: #9a673e;
+  font-size: 8px;
+  font-weight: 650;
+  white-space: nowrap;
 }
 
 .client-progress-bar.support-details-progress-bar {
@@ -2179,6 +2301,36 @@ p.modal-subtext {
   width: 100%;
   height: 5px;
   margin: 0;
+}
+
+.support-details-countdown {
+  margin-top: 5px;
+  color: #667580;
+  font-size: 9px;
+  font-weight: 550;
+  text-align: right;
+}
+
+.support-details-countdown.due {
+  color: #b85b34;
+  font-weight: 650;
+}
+
+.support-payment-action {
+  width: 100%;
+  min-height: 34px;
+  margin: 9px 0 0;
+  padding: 6px 10px;
+  border: 1px solid #8daab6;
+  border-radius: 5px;
+  background: #e6eef1;
+  color: #314e60;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.support-payment-action:active {
+  background: #d8e6ea;
 }
 
 .support-shift-section {
@@ -2232,6 +2384,21 @@ p.modal-subtext {
   pointer-events: none;
 }
 
+.support-shift-preview {
+  min-height: 20px;
+  margin-top: 5px;
+  padding: 4px 7px;
+  border-left: 2px solid #7f9dac;
+  background: #f0f5f6;
+  color: #405969;
+  font-size: 9px;
+  font-weight: 600;
+}
+
+.support-shift-preview[hidden] {
+  display: none;
+}
+
 .support-details-modal .modal-actions {
   margin-top: 10px;
 }
@@ -2241,6 +2408,137 @@ p.modal-subtext {
   cursor: default;
   opacity: 0.5;
   transform: none;
+}
+
+.support-history-overlay,
+.support-dates-edit-overlay {
+  z-index: 60;
+}
+
+.support-payment-confirm-overlay,
+.support-undo-confirm-overlay {
+  z-index: 70;
+}
+
+.support-modal-close-icon {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  margin: -5px -5px 0 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #536775;
+}
+
+.support-history-list {
+  max-height: min(330px, 55vh);
+  overflow-y: auto;
+  border-top: 1px solid #e0e5e8;
+  border-bottom: 1px solid #e0e5e8;
+  scrollbar-width: thin;
+}
+
+.support-history-item {
+  display: grid;
+  gap: 3px;
+  padding: 9px 2px;
+  border-bottom: 1px solid #e8ecee;
+}
+
+.support-history-item:last-child {
+  border-bottom: 0;
+}
+
+.support-history-item strong {
+  color: #2e4254;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.support-history-item span,
+.support-history-item small {
+  color: #6d7b85;
+  font-size: 9px;
+}
+
+.support-history-item small {
+  color: #4f6877;
+  font-weight: 550;
+}
+
+.support-history-undo {
+  justify-self: start;
+  min-height: 27px;
+  margin: 5px 0 0;
+  padding: 4px 7px;
+  border: 1px solid #deb6b2;
+  border-radius: 5px;
+  background: #fbf4f3;
+  color: #a24c48;
+  font-size: 9px;
+  font-weight: 600;
+}
+
+.support-history-empty {
+  padding: 23px 8px;
+  color: #7a8790;
+  font-size: 10px;
+  text-align: center;
+}
+
+.support-history-actions {
+  margin-top: 10px;
+}
+
+.support-payment-confirm-modal {
+  width: min(300px, calc(100vw - 28px));
+  box-sizing: border-box;
+}
+
+.support-payment-confirm-client {
+  color: #2e4254;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.modal .support-payment-confirm-copy {
+  margin: 8px 0 13px;
+  color: #62717d;
+  line-height: 1.45;
+}
+
+.support-dates-fields {
+  display: grid;
+  gap: 10px;
+  padding-top: 9px;
+  border-top: 1px solid #e0e5e8;
+}
+
+.support-dates-field {
+  display: grid;
+  gap: 4px;
+}
+
+.support-dates-field > span {
+  color: #65737e;
+  font-size: 9px;
+  font-weight: 550;
+}
+
+.support-dates-field .support-start-date-button {
+  width: 100%;
+  max-width: none;
+  min-height: 36px;
+  justify-content: space-between;
+}
+
+.modal .support-dates-note {
+  margin: 9px 0 0;
+  color: #7a6758;
+  font-size: 9px;
+  line-height: 1.4;
 }
 
 

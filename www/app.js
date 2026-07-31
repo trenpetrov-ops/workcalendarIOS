@@ -166,9 +166,17 @@ const state = {
   // подробности месячного ведения
   supportDetailsOpen: false,
   supportDetailsId: null,
-  supportStartCalendarOpen: false,
-  supportStartCalendarMonthISO: currentMonthStartISO(),
-  supportStartPending: false,
+  supportDatesEditOpen: false,
+  supportDatesDraftStartISO: "",
+  supportDatesDraftLastPaymentISO: "",
+  supportDatesCalendarField: null,
+  supportDatesCalendarMonthISO: currentMonthStartISO(),
+  supportDatesPending: false,
+  supportHistoryOpen: false,
+  supportPaymentConfirmOpen: false,
+  supportPaymentPending: false,
+  supportUndoConfirmOpen: false,
+  supportUndoPending: false,
   supportShiftDays: "",
   supportShiftPending: false,
 
@@ -285,16 +293,22 @@ function initGlobalHandlers() {
 
     if (el.matches("[data-bind='supportShiftDays']")) {
       state.supportShiftDays = el.value;
-      const shiftDays = Number(el.value);
+      const entry = monthlySupportEntries().find(
+        (item) => item.id === state.supportDetailsId
+      );
+      const previewData = entry
+        ? supportShiftPreview(entry, el.value)
+        : { valid: false, previewText: "" };
       const shiftButton = document.querySelector(
         '[data-action="shift-support-payment"]'
       );
       if (shiftButton) {
-        shiftButton.disabled =
-          state.supportShiftPending ||
-          !Number.isInteger(shiftDays) ||
-          shiftDays < 1 ||
-          shiftDays > 365;
+        shiftButton.disabled = state.supportShiftPending || !previewData.valid;
+      }
+      const preview = document.querySelector('[data-role="support-shift-preview"]');
+      if (preview) {
+        preview.hidden = !previewData.valid;
+        preview.textContent = previewData.previewText;
       }
     }
   });
@@ -304,22 +318,6 @@ function initGlobalHandlers() {
 let swipeX = 0;
 let startX = 0;
 let isDragging = false;
-
-function setCalendarBoundaryVisible(visible, zone = null) {
-  const container = zone?.closest(".calendar-container") ||
-    document.querySelector(".calendar-container");
-  container?.classList.toggle("calendar-moving", visible);
-}
-
-function hideCalendarBoundaryWhenSettled(zone) {
-  if (!zone) return;
-  const onTransitionEnd = (event) => {
-    if (event.target !== zone || event.propertyName !== "transform") return;
-    zone.removeEventListener("transitionend", onTransitionEnd);
-    setCalendarBoundaryVisible(false, zone);
-  };
-  zone.addEventListener("transitionend", onTransitionEnd);
-}
 
 document.addEventListener("touchstart", (e) => {
   const zone = e.target.closest(".calendar-scroll-inner");
@@ -333,9 +331,6 @@ document.addEventListener("touchmove", (e) => {
   if (!isDragging) return;
   const zone = document.querySelector(".calendar-scroll-inner");
   swipeX = e.touches[0].clientX - startX;
-  if (Math.abs(swipeX) >= 1) {
-    setCalendarBoundaryVisible(true, zone);
-  }
   // сохраняем центральную неделю, добавляем подглядывание соседней
   zone.style.transform = `translateX(calc(-33.333% + ${swipeX}px))`;
 });
@@ -365,10 +360,8 @@ document.addEventListener("touchend", () => {
       const newZone = document.querySelector(".calendar-scroll-inner");
       if (!newZone) return;
 
-      setCalendarBoundaryVisible(true, newZone);
       newZone.style.transition = "none";
       newZone.style.transform = "translateX(0%)"; // новая неделя справа
-      hideCalendarBoundaryWhenSettled(newZone);
 
       requestAnimationFrame(() => {
         newZone.style.transition = `transform ${ANIM_SPEED}s ${EASING}`;
@@ -389,10 +382,8 @@ document.addEventListener("touchend", () => {
       const newZone = document.querySelector(".calendar-scroll-inner");
       if (!newZone) return;
 
-      setCalendarBoundaryVisible(true, newZone);
       newZone.style.transition = "none";
       newZone.style.transform = "translateX(-66.666%)"; // новая неделя слева
-      hideCalendarBoundaryWhenSettled(newZone);
 
       requestAnimationFrame(() => {
         newZone.style.transition = `transform ${ANIM_SPEED}s ${EASING}`;
@@ -403,9 +394,6 @@ document.addEventListener("touchend", () => {
     // Недотянул — просто вернуться
     zone.style.transition = `transform ${ANIM_SPEED}s ${EASING}`;
     zone.style.transform = "translateX(-33.333%)";
-    if (Math.abs(swipeX) >= 1) {
-      hideCalendarBoundaryWhenSettled(zone);
-    }
   }
 
   swipeX = 0;
@@ -603,9 +591,17 @@ function closeAllTransient() {
   state.bookingMoveTimeOpen = false;
   state.supportDetailsOpen = false;
   state.supportDetailsId = null;
-  state.supportStartCalendarOpen = false;
-  state.supportStartCalendarMonthISO = currentMonthStartISO();
-  state.supportStartPending = false;
+  state.supportDatesEditOpen = false;
+  state.supportDatesDraftStartISO = "";
+  state.supportDatesDraftLastPaymentISO = "";
+  state.supportDatesCalendarField = null;
+  state.supportDatesCalendarMonthISO = currentMonthStartISO();
+  state.supportDatesPending = false;
+  state.supportHistoryOpen = false;
+  state.supportPaymentConfirmOpen = false;
+  state.supportPaymentPending = false;
+  state.supportUndoConfirmOpen = false;
+  state.supportUndoPending = false;
   state.supportShiftDays = "";
   state.supportShiftPending = false;
   state.selectedBookingId = null;
@@ -993,30 +989,25 @@ function clientNames() {
   );
   const sortedSet = new Set(sorted);
   const groupByName = sharedClientGroupMap();
-  const visited = new Set();
-  const ordered = [];
+  const standalone = sorted.filter((name) => !groupByName.has(name));
+  const visitedGroups = new Set();
+  const grouped = [];
 
   sorted.forEach((name) => {
-    if (visited.has(name)) return;
     const group = groupByName.get(name);
-
-    if (!group) {
-      ordered.push(name);
-      visited.add(name);
-      return;
-    }
+    if (!group || visitedGroups.has(group.main)) return;
+    visitedGroups.add(group.main);
 
     [group.main, ...group.members.filter((member) => member !== group.main)].forEach(
       (member) => {
-        if (sortedSet.has(member) && !visited.has(member)) {
-          ordered.push(member);
-          visited.add(member);
+        if (sortedSet.has(member)) {
+          grouped.push(member);
         }
       }
     );
   });
 
-  return ordered;
+  return [...standalone, ...grouped];
 }
 
 function clientRemainingSessions(name) {
@@ -1088,16 +1079,28 @@ function formatSupportStart(dateISO) {
   }).format(parseISO(dateISO));
 }
 
+function formatSupportCompact(dateISO) {
+  if (!dateISO) return "Дата не указана";
+  return new Intl.DateTimeFormat("ru-RU", {
+    day: "numeric",
+    month: "long"
+  }).format(parseISO(dateISO));
+}
+
 function isValidDateISO(dateISO) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateISO || "")) return false;
   const date = parseISO(dateISO);
   return !Number.isNaN(date.getTime()) && format(date, "yyyy-MM-dd") === dateISO;
 }
 
-function addCalendarMonthsISO(dateISO, monthOffset) {
+function addCalendarMonthsISO(dateISO, monthOffset, preferredDay) {
   if (!isValidDateISO(dateISO)) return "";
 
   const source = parseISO(dateISO);
+  const requestedDay = Number(preferredDay);
+  const targetDay = Number.isInteger(requestedDay) && requestedDay >= 1 && requestedDay <= 31
+    ? requestedDay
+    : source.getDate();
   const target = new Date(
     source.getFullYear(),
     source.getMonth() + monthOffset,
@@ -1108,7 +1111,7 @@ function addCalendarMonthsISO(dateISO, monthOffset) {
     target.getMonth() + 1,
     0
   ).getDate();
-  target.setDate(Math.min(source.getDate(), lastDay));
+  target.setDate(Math.min(targetDay, lastDay));
   return format(target, "yyyy-MM-dd");
 }
 
@@ -1128,40 +1131,94 @@ function dateDiffInDays(laterISO, earlierISO) {
   return Math.round((laterUTC - earlierUTC) / 86400000);
 }
 
+function addDaysISO(dateISO, dayOffset) {
+  if (!isValidDateISO(dateISO)) return "";
+  return format(addDays(parseISO(dateISO), dayOffset), "yyyy-MM-dd");
+}
+
+function normalizeSupportHistory(history) {
+  if (!Array.isArray(history)) return [];
+  return history
+    .filter(
+      (item) =>
+        item &&
+        isValidDateISO(item.paymentISO) &&
+        isValidDateISO(item.markedISO)
+    )
+    .map((item) => {
+      const previous = item.previousSchedule || {};
+      const previousSchedule =
+        isValidDateISO(previous.lastPaymentISO) &&
+        isValidDateISO(previous.billingAnchorISO)
+          ? {
+              lastPaymentISO: previous.lastPaymentISO,
+              billingAnchorISO: previous.billingAnchorISO,
+              billingDay: Number(previous.billingDay),
+              paymentShiftDays: Number(previous.paymentShiftDays) || 0
+            }
+          : null;
+      return {
+        paymentISO: item.paymentISO,
+        markedISO: item.markedISO,
+        shiftDays: Number.isInteger(Number(item.shiftDays))
+          ? Number(item.shiftDays)
+          : 0,
+        previousSchedule
+      };
+    });
+}
+
 function supportBillingCycle(entry, todayISO = currentLocalDateISO()) {
   const startISO = isValidDateISO(entry.startISO)
     ? entry.startISO
     : todayISO;
-  let periodStartISO = isValidDateISO(entry.paymentAnchorISO)
-    ? entry.paymentAnchorISO
-    : startISO;
-  let nextPaymentISO = isValidDateISO(entry.nextPaymentISO)
-    ? entry.nextPaymentISO
-    : addCalendarMonthsISO(startISO, 1);
-
-  if (nextPaymentISO < todayISO) {
-    const scheduleBaseISO = nextPaymentISO;
-    let monthOffset = 0;
-    while (nextPaymentISO < todayISO) {
-      periodStartISO = nextPaymentISO;
-      monthOffset += 1;
-      nextPaymentISO = addCalendarMonthsISO(scheduleBaseISO, monthOffset);
-    }
-  }
+  const lastPaymentISO = isValidDateISO(entry.lastPaymentISO)
+    ? entry.lastPaymentISO
+    : isValidDateISO(entry.paymentAnchorISO)
+      ? entry.paymentAnchorISO
+      : startISO;
+  const billingAnchorISO = isValidDateISO(entry.billingAnchorISO)
+    ? entry.billingAnchorISO
+    : isValidDateISO(entry.paymentAnchorISO)
+      ? entry.paymentAnchorISO
+      : lastPaymentISO;
+  const savedBillingDay = Number(entry.billingDay);
+  const billingDay =
+    Number.isInteger(savedBillingDay) && savedBillingDay >= 1 && savedBillingDay <= 31
+      ? savedBillingDay
+      : parseISO(billingAnchorISO).getDate();
+  const baseNextPaymentISO = addCalendarMonthsISO(
+    billingAnchorISO,
+    1,
+    billingDay
+  );
+  const legacyShiftDays = isValidDateISO(entry.nextPaymentISO)
+    ? dateDiffInDays(entry.nextPaymentISO, baseNextPaymentISO)
+    : 0;
+  const savedShiftDays = Number(entry.paymentShiftDays);
+  const shiftDays = Number.isInteger(savedShiftDays)
+    ? savedShiftDays
+    : legacyShiftDays;
+  const nextPaymentISO = addDaysISO(baseNextPaymentISO, shiftDays);
 
   const periodDays = Math.max(
     1,
-    dateDiffInDays(nextPaymentISO, periodStartISO)
+    dateDiffInDays(nextPaymentISO, billingAnchorISO)
   );
   const elapsedDays = Math.max(
     0,
-    Math.min(periodDays, dateDiffInDays(todayISO, periodStartISO))
+    Math.min(periodDays, dateDiffInDays(todayISO, billingAnchorISO))
   );
 
   return {
-    periodStartISO,
+    periodStartISO: billingAnchorISO,
+    lastPaymentISO,
+    billingAnchorISO,
+    billingDay,
+    baseNextPaymentISO,
     nextPaymentISO,
-    daysUntil: Math.max(0, dateDiffInDays(nextPaymentISO, todayISO)),
+    shiftDays,
+    daysUntil: dateDiffInDays(nextPaymentISO, todayISO),
     progress: Math.round((elapsedDays / periodDays) * 100)
   };
 }
@@ -1177,21 +1234,45 @@ function pluralDays(value) {
 }
 
 function supportCountdownText(daysUntil) {
-  return daysUntil === 0
-    ? "сегодня"
-    : `${daysUntil} ${pluralDays(daysUntil)}`;
+  if (daysUntil === 0) return "сегодня";
+  if (daysUntil < 0) {
+    const overdueDays = Math.abs(daysUntil);
+    return `просрочено ${overdueDays} ${pluralDays(overdueDays)}`;
+  }
+  return `${daysUntil} ${pluralDays(daysUntil)}`;
+}
+
+function formatSupportShift(shiftDays) {
+  if (!shiftDays) return "";
+  const sign = shiftDays > 0 ? "+" : "−";
+  return `${sign}${Math.abs(shiftDays)} ${pluralDays(shiftDays)}`;
 }
 
 function monthlySupportEntries() {
   return packages
     .filter((p) => p.monthlySupport && p.clientName)
-    .map((p) => ({
-      id: p.id,
-      name: p.clientName,
-      startISO: p.supportStartISO || p.addedISO || "",
-      paymentAnchorISO: p.supportPaymentAnchorISO || "",
-      nextPaymentISO: p.supportNextPaymentISO || ""
-    }))
+    .map((p) => {
+      const paymentHistory = normalizeSupportHistory(p.supportPaymentHistory);
+      const latestPayment = paymentHistory[paymentHistory.length - 1];
+      const historyLastPaymentISO = latestPayment?.markedISO || "";
+      const lastPaymentISO = isValidDateISO(historyLastPaymentISO)
+        ? historyLastPaymentISO
+        : p.supportLastPaymentISO || "";
+
+      return {
+        id: p.id,
+        name: p.clientName,
+        startISO: p.supportStartISO || p.addedISO || "",
+        lastPaymentISO,
+        hasSavedLastPayment: isValidDateISO(lastPaymentISO),
+        billingAnchorISO: p.supportBillingAnchorISO || "",
+        billingDay: p.supportBillingDay,
+        paymentShiftDays: p.supportPaymentShiftDays,
+        paymentHistory,
+        paymentAnchorISO: p.supportPaymentAnchorISO || "",
+        nextPaymentISO: p.supportNextPaymentISO || ""
+      };
+    })
     .sort(
       (a, b) =>
         (a.startISO || "").localeCompare(b.startISO || "") ||
@@ -1243,6 +1324,10 @@ function render() {
       ${renderClientsPanel()}  <!-- полностью твой старый блок -->
       ${state.packageModalOpen ? renderPackageModal() : ""}
       ${state.supportDetailsOpen ? renderSupportDetailsModal() : ""}
+      ${state.supportDatesEditOpen ? renderSupportDatesEditModal() : ""}
+      ${state.supportHistoryOpen ? renderSupportPaymentHistoryModal() : ""}
+      ${state.supportPaymentConfirmOpen ? renderSupportPaymentConfirmModal() : ""}
+      ${state.supportUndoConfirmOpen ? renderSupportUndoConfirmModal() : ""}
       ${state.confirm.open ? renderConfirmModal() : ""}
     `;
   }
@@ -1253,6 +1338,10 @@ function render() {
       state.packageModalOpen ||
       state.bookingDetailsOpen ||
       state.supportDetailsOpen ||
+      state.supportDatesEditOpen ||
+      state.supportHistoryOpen ||
+      state.supportPaymentConfirmOpen ||
+      state.supportUndoConfirmOpen ||
       state.confirm.open ||
       state.timeSettingsModalOpen
     ) {
@@ -1872,17 +1961,19 @@ function renderClientsPanel() {
                               </svg>
                             </button>
                           </div>
-                          <div class="client-card-header monthly-support-card-header"
-                               data-action="open-support-details"
-                               data-id="${escapeHtml(entry.id)}"
-                               role="button"
-                               tabindex="0">
-                            <div class="monthly-support-person">
+                          <div class="client-card-header monthly-support-card-header">
+                            <div class="monthly-support-person"
+                                 data-action="open-support-details"
+                                 data-id="${escapeHtml(entry.id)}"
+                                 role="button"
+                                 tabindex="0">
                               <div class="monthly-support-heading">
                                 <span class="monthly-support-name">${escapeHtml(entry.name)}</span>
-                                <span class="monthly-support-days">
-                                  ${escapeHtml(supportCountdownText(billing.daysUntil))}
-                                </span>
+                                ${billing.daysUntil > 0
+                                  ? `<span class="monthly-support-days">
+                                       ${escapeHtml(supportCountdownText(billing.daysUntil))}
+                                     </span>`
+                                  : ""}
                               </div>
                               <div class="monthly-support-progress-row">
                                 <span class="client-progress-bar monthly-support-progress-bar">
@@ -1891,9 +1982,20 @@ function renderClientsPanel() {
                                 </span>
                               </div>
                               <span class="monthly-support-date">
-                                Следующая оплата ${escapeHtml(formatSupportStart(billing.nextPaymentISO))}
+                                Срок ${escapeHtml(formatSupportCompact(billing.nextPaymentISO))}
+                                ${billing.shiftDays
+                                  ? `<b>${escapeHtml(formatSupportShift(billing.shiftDays))} от ${escapeHtml(formatSupportCompact(billing.baseNextPaymentISO))}</b>`
+                                  : ""}
                               </span>
                             </div>
+                            ${billing.daysUntil <= 0
+                              ? `<button type="button"
+                                         class="monthly-support-paid-button"
+                                         data-action="open-support-payment-confirm"
+                                         data-id="${escapeHtml(entry.id)}">
+                                   Оплата проведена
+                                 </button>`
+                              : ""}
                           </div>
                         </div>
                       </div>`;
@@ -1910,8 +2012,24 @@ function renderClientsPanel() {
   return html;
 }
 
+function supportEntryById(id = state.supportDetailsId) {
+  return monthlySupportEntries().find((item) => item.id === id);
+}
+
+function resetSupportNestedState() {
+  state.supportDatesEditOpen = false;
+  state.supportDatesDraftStartISO = "";
+  state.supportDatesDraftLastPaymentISO = "";
+  state.supportDatesCalendarField = null;
+  state.supportDatesCalendarMonthISO = currentMonthStartISO();
+  state.supportHistoryOpen = false;
+  state.supportPaymentConfirmOpen = false;
+  state.supportUndoConfirmOpen = false;
+  state.supportShiftDays = "";
+}
+
 function openSupportDetails(id) {
-  const entry = monthlySupportEntries().find((item) => item.id === id);
+  const entry = supportEntryById(id);
   if (!entry) {
     showToast("Не удалось открыть данные ведения.", "error");
     return;
@@ -1919,30 +2037,35 @@ function openSupportDetails(id) {
 
   state.supportDetailsOpen = true;
   state.supportDetailsId = id;
-  state.supportStartCalendarOpen = false;
-  state.supportStartCalendarMonthISO = monthStartISOFor(
-    entry.startISO || currentLocalDateISO()
-  );
-  state.supportStartPending = false;
-  state.supportShiftDays = "";
+  state.supportDatesPending = false;
+  state.supportPaymentPending = false;
+  state.supportUndoPending = false;
   state.supportShiftPending = false;
+  resetSupportNestedState();
   render();
 }
 
 function closeSupportDetails() {
-  if (state.supportShiftPending || state.supportStartPending) return;
+  if (supportDetailsBusy()) return;
   state.supportDetailsOpen = false;
   state.supportDetailsId = null;
-  state.supportStartCalendarOpen = false;
-  state.supportStartPending = false;
-  state.supportShiftDays = "";
+  resetSupportNestedState();
   render();
 }
 
-function renderSupportStartCalendar(entry) {
+function supportDetailsBusy() {
+  return Boolean(
+    state.supportDatesPending ||
+    state.supportShiftPending ||
+    state.supportPaymentPending ||
+    state.supportUndoPending
+  );
+}
+
+function renderSupportDateCalendar(selectedISO) {
   const monthStart = parseISO(
-    state.supportStartCalendarMonthISO ||
-      monthStartISOFor(entry.startISO || currentLocalDateISO())
+    state.supportDatesCalendarMonthISO ||
+      monthStartISOFor(selectedISO || currentLocalDateISO())
   );
   const year = monthStart.getFullYear();
   const month = monthStart.getMonth();
@@ -1962,12 +2085,10 @@ function renderSupportStartCalendar(entry) {
     }
 
     const dateISO = format(new Date(year, month, day), "yyyy-MM-dd");
-    const selected = dateISO === entry.startISO;
-    const today = dateISO === todayISO;
     return `
       <button type="button"
-              class="package-calendar-day ${selected ? "selected" : ""} ${today ? "today" : ""}"
-              data-action="select-support-start-date"
+              class="package-calendar-day ${dateISO === selectedISO ? "selected" : ""} ${dateISO === todayISO ? "today" : ""}"
+              data-action="select-support-date"
               data-date="${dateISO}"
               aria-label="${escapeHtml(formatSupportStart(dateISO))}">
         ${day}
@@ -1975,28 +2096,20 @@ function renderSupportStartCalendar(entry) {
   }).join("");
 
   return `
-    <div class="package-calendar support-start-calendar">
+    <div class="package-calendar support-date-calendar">
       <div class="package-calendar-header">
         <button type="button"
-                data-action="support-start-calendar-prev"
+                data-action="support-dates-calendar-prev"
                 aria-label="Предыдущий месяц">
-          <svg xmlns="http://www.w3.org/2000/svg"
-               width="16"
-               height="16"
-               viewBox="0 0 24 24"
-               aria-hidden="true">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
             <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m15 18-6-6 6-6"></path>
           </svg>
         </button>
         <strong>${escapeHtml(monthLabel)}</strong>
         <button type="button"
-                data-action="support-start-calendar-next"
+                data-action="support-dates-calendar-next"
                 aria-label="Следующий месяц">
-          <svg xmlns="http://www.w3.org/2000/svg"
-               width="16"
-               height="16"
-               viewBox="0 0 24 24"
-               aria-hidden="true">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
             <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m9 18 6-6-6-6"></path>
           </svg>
         </button>
@@ -2010,142 +2123,325 @@ function renderSupportStartCalendar(entry) {
     </div>`;
 }
 
-function toggleSupportStartCalendar() {
-  if (state.supportStartPending || state.supportShiftPending) return;
-  const entry = monthlySupportEntries().find(
-    (item) => item.id === state.supportDetailsId
-  );
+function openSupportDatesEdit() {
+  if (supportDetailsBusy()) return;
+  const entry = supportEntryById();
   if (!entry) return;
-
-  if (!state.supportStartCalendarOpen) {
-    state.supportStartCalendarMonthISO = monthStartISOFor(
-      entry.startISO || currentLocalDateISO()
-    );
-  }
-  state.supportStartCalendarOpen = !state.supportStartCalendarOpen;
+  const billing = supportBillingCycle(entry);
+  state.supportDatesEditOpen = true;
+  state.supportDatesDraftStartISO = entry.startISO;
+  state.supportDatesDraftLastPaymentISO = billing.lastPaymentISO;
+  state.supportDatesCalendarField = null;
+  state.supportDatesCalendarMonthISO = currentMonthStartISO();
   render();
 }
 
-function moveSupportStartCalendar(monthDelta) {
-  if (state.supportStartPending) return;
+function closeSupportDatesEdit() {
+  if (state.supportDatesPending) return;
+  state.supportDatesEditOpen = false;
+  state.supportDatesCalendarField = null;
+  render();
+}
+
+function toggleSupportDatesCalendar(field) {
+  if (state.supportDatesPending) return;
+  const normalizedField = field === "payment" ? "payment" : "start";
+  if (state.supportDatesCalendarField === normalizedField) {
+    state.supportDatesCalendarField = null;
+  } else {
+    state.supportDatesCalendarField = normalizedField;
+    const selectedISO = normalizedField === "payment"
+      ? state.supportDatesDraftLastPaymentISO
+      : state.supportDatesDraftStartISO;
+    state.supportDatesCalendarMonthISO = monthStartISOFor(selectedISO);
+  }
+  render();
+}
+
+function moveSupportDatesCalendar(monthDelta) {
+  if (state.supportDatesPending) return;
   const current = parseISO(
-    state.supportStartCalendarMonthISO || currentMonthStartISO()
+    state.supportDatesCalendarMonthISO || currentMonthStartISO()
   );
   const next = new Date(
     current.getFullYear(),
     current.getMonth() + monthDelta,
     1
   );
-  state.supportStartCalendarMonthISO = format(next, "yyyy-MM-dd");
+  state.supportDatesCalendarMonthISO = format(next, "yyyy-MM-dd");
   render();
 }
 
-async function selectSupportStartDate(dateISO) {
-  if (state.supportStartPending || !isValidDateISO(dateISO)) return;
-  const entry = monthlySupportEntries().find(
-    (item) => item.id === state.supportDetailsId
-  );
+function selectSupportDate(dateISO) {
+  if (state.supportDatesPending || !isValidDateISO(dateISO)) return;
+  if (state.supportDatesCalendarField === "payment") {
+    state.supportDatesDraftLastPaymentISO = dateISO;
+  } else {
+    state.supportDatesDraftStartISO = dateISO;
+  }
+  state.supportDatesCalendarField = null;
+  render();
+}
+
+async function saveSupportDates() {
+  if (state.supportDatesPending) return;
+  const entry = supportEntryById();
   if (!entry) {
     showToast("Данные ведения не найдены.", "error");
     return;
   }
 
-  state.supportStartPending = true;
-  state.supportStartCalendarOpen = false;
+  const startISO = state.supportDatesDraftStartISO;
+  const lastPaymentISO = state.supportDatesDraftLastPaymentISO;
+  if (!isValidDateISO(startISO) || !isValidDateISO(lastPaymentISO)) {
+    showToast("Проверьте обе даты.", "error");
+    return;
+  }
+  if (lastPaymentISO < startISO) {
+    showToast("Последняя оплата не может быть раньше начала ведения.", "error");
+    return;
+  }
+
+  const previousHistoryPayment = entry.paymentHistory[entry.paymentHistory.length - 2];
+  if (previousHistoryPayment && lastPaymentISO < previousHistoryPayment.markedISO) {
+    showToast("Последняя оплата не может быть раньше предыдущей оплаты.", "error");
+    return;
+  }
+
+  const billing = supportBillingCycle(entry);
+  const paymentChanged = lastPaymentISO !== billing.lastPaymentISO;
+  const hasPaymentHistory = entry.paymentHistory.length > 0;
+  const updates = { supportStartISO: startISO };
+  if (paymentChanged || !entry.hasSavedLastPayment) {
+    updates.supportLastPaymentISO = lastPaymentISO;
+    if (hasPaymentHistory) {
+      const latestPayment = entry.paymentHistory[entry.paymentHistory.length - 1];
+      updates.supportPaymentHistory = [
+        ...entry.paymentHistory.slice(0, -1),
+        { ...latestPayment, markedISO: lastPaymentISO }
+      ];
+    } else {
+      Object.assign(updates, {
+        supportBillingAnchorISO: lastPaymentISO,
+        supportBillingDay: parseISO(lastPaymentISO).getDate(),
+        supportPaymentShiftDays: 0,
+        supportPaymentAnchorISO: deleteField(),
+        supportNextPaymentISO: deleteField()
+      });
+    }
+  }
+
+  state.supportDatesPending = true;
   render();
   try {
-    await updateDoc(doc(db, "packages", entry.id), {
-      supportStartISO: dateISO,
-      supportPaymentAnchorISO: deleteField(),
-      supportNextPaymentISO: deleteField()
-    });
-    state.supportStartCalendarMonthISO = monthStartISOFor(dateISO);
-    showToast(`Начало ведения: ${formatSupportStart(dateISO)}.`, "success");
+    await updateDoc(doc(db, "packages", entry.id), updates);
+    state.supportDatesEditOpen = false;
+    state.supportDatesCalendarField = null;
+    showToast(
+      paymentChanged
+        ? hasPaymentHistory
+          ? "Фактическая дата оплаты исправлена. График сохранен."
+          : "Даты сохранены. Следующий срок рассчитан от последней оплаты."
+        : "Дата начала сохранена.",
+      "success"
+    );
   } catch (err) {
-    console.error("Ошибка изменения даты начала ведения:", err);
-    state.supportStartCalendarOpen = true;
-    showToast("Не удалось изменить дату начала ведения.", "error");
+    console.error("Ошибка изменения дат ведения:", err);
+    showToast("Не удалось сохранить даты.", "error");
   } finally {
-    state.supportStartPending = false;
+    state.supportDatesPending = false;
     render();
   }
 }
 
-function renderSupportDetailsModal() {
-  const entry = monthlySupportEntries().find(
-    (item) => item.id === state.supportDetailsId
+function renderSupportDatesEditModal() {
+  const entry = supportEntryById();
+  if (!entry) return "";
+  const calendarField = state.supportDatesCalendarField;
+  const selectedISO = calendarField === "payment"
+    ? state.supportDatesDraftLastPaymentISO
+    : state.supportDatesDraftStartISO;
+
+  const dateField = (field, label, value) => `
+    <div class="support-dates-field">
+      <span>${label}</span>
+      <button type="button"
+              class="support-start-date-button ${calendarField === field ? "open" : ""}"
+              data-action="toggle-support-dates-calendar"
+              data-field="${field}"
+              aria-expanded="${calendarField === field}"
+              ${state.supportDatesPending ? "disabled" : ""}>
+        <span>${escapeHtml(formatSupportStart(value))}</span>
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" aria-hidden="true">
+          <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M7 2v3m10-3v3M3.5 9h17M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2"></path>
+        </svg>
+      </button>
+      ${calendarField === field ? renderSupportDateCalendar(selectedISO) : ""}
+    </div>`;
+
+  return `
+    <div class="modal-overlay support-details-overlay support-dates-edit-overlay">
+      <div class="modal support-details-modal support-dates-edit-modal">
+        <div class="support-details-header">
+          <h3>Исправить даты</h3>
+          <button type="button"
+                  class="support-modal-close-icon"
+                  data-action="close-support-dates-edit"
+                  aria-label="Закрыть">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8" d="m6 6 12 12M18 6 6 18"></path>
+            </svg>
+          </button>
+        </div>
+        <div class="support-details-client">${escapeHtml(entry.name)}</div>
+        <div class="support-dates-fields">
+          ${dateField("start", "Начало ведения", state.supportDatesDraftStartISO)}
+          ${dateField("payment", "Последняя фактическая оплата", state.supportDatesDraftLastPaymentISO)}
+        </div>
+        <p class="support-dates-note">
+          ${entry.paymentHistory.length
+            ? "Это служебная правка. Фактическая дата обновится в истории, а график и текущий срок не изменятся."
+            : "Это служебная правка. Последняя оплата задает первый расчетный срок."}
+        </p>
+        <div class="modal-actions">
+          <button class="btn-gray"
+                  data-action="close-support-dates-edit"
+                  ${state.supportDatesPending ? "disabled" : ""}>
+            Отмена
+          </button>
+          <button class="btn-blue"
+                  data-action="save-support-dates"
+                  ${state.supportDatesPending ? "disabled" : ""}>
+            ${state.supportDatesPending ? "Сохраняем..." : "Сохранить"}
+          </button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function supportShiftPreview(entry, rawValue) {
+  const value = String(rawValue ?? "").trim();
+  if (!/^[+-]?\d+$/.test(value)) return { valid: false, previewText: "" };
+  const deltaDays = Number(value);
+  const billing = supportBillingCycle(entry);
+  const nextPaymentISO = addDaysISO(billing.nextPaymentISO, deltaDays);
+  const totalShiftDays = dateDiffInDays(
+    nextPaymentISO,
+    billing.baseNextPaymentISO
   );
+  const valid =
+    Number.isInteger(deltaDays) &&
+    deltaDays !== 0 &&
+    Math.abs(deltaDays) <= 365 &&
+    Math.abs(totalShiftDays) <= 365 &&
+    nextPaymentISO > billing.billingAnchorISO;
+  return {
+    valid,
+    deltaDays,
+    totalShiftDays,
+    nextPaymentISO,
+    previewText: valid
+      ? `${formatSupportCompact(billing.nextPaymentISO)} → ${formatSupportCompact(nextPaymentISO)}`
+      : ""
+  };
+}
+
+function renderSupportDetailsModal() {
+  const entry = supportEntryById();
   if (!entry) return "";
 
   const billing = supportBillingCycle(entry);
-  const shiftDays = Number(state.supportShiftDays);
-  const supportBusy = state.supportStartPending || state.supportShiftPending;
-  const canShift =
-    !supportBusy &&
-    Number.isInteger(shiftDays) &&
-    shiftDays >= 1 &&
-    shiftDays <= 365;
+  const previewData = supportShiftPreview(entry, state.supportShiftDays);
+  const supportBusy = supportDetailsBusy();
+  const paymentActionText = billing.daysUntil > 0
+    ? "Оплатить заранее"
+    : "Оплата проведена";
 
   return `
     <div class="modal-overlay support-details-overlay" data-action="overlay-click">
       <div class="modal support-details-modal">
-        <h3>Ведение</h3>
+        <div class="support-details-header">
+          <h3>Ведение</h3>
+          <div class="support-details-header-actions">
+            <button type="button"
+                    class="support-edit-dates-button"
+                    data-action="open-support-dates-edit"
+                    aria-label="Исправить даты"
+                    title="Исправить даты"
+                    ${supportBusy ? "disabled" : ""}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" aria-hidden="true">
+                <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"></path>
+              </svg>
+            </button>
+            <button type="button"
+                    class="support-history-button"
+                    data-action="open-support-history"
+                    ${supportBusy ? "disabled" : ""}>
+              История
+            </button>
+          </div>
+        </div>
         <div class="support-details-client">${escapeHtml(entry.name)}</div>
         <div class="support-details-info">
           <div class="support-details-info-row">
             <span>Начало ведения</span>
-            <button type="button"
-                    class="support-start-date-button ${state.supportStartCalendarOpen ? "open" : ""}"
-                    data-action="toggle-support-start-calendar"
-                    aria-expanded="${state.supportStartCalendarOpen}"
-                    ${supportBusy ? "disabled" : ""}>
-              <span>${state.supportStartPending
-                ? "Сохраняем..."
-                : escapeHtml(formatSupportStart(entry.startISO))}</span>
-              <svg xmlns="http://www.w3.org/2000/svg"
-                   width="15"
-                   height="15"
-                   viewBox="0 0 24 24"
-                   aria-hidden="true">
-                <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M7 2v3m10-3v3M3.5 9h17M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2m2.5 9h.01m4.49 0h.01m4.49 0h.01M7.5 17h.01m4.49 0h.01m4.49 0h.01"></path>
-              </svg>
-            </button>
+            <strong>${escapeHtml(formatSupportStart(entry.startISO))}</strong>
           </div>
-          ${state.supportStartCalendarOpen ? renderSupportStartCalendar(entry) : ""}
           <div class="support-details-info-row">
-            <span>Следующая оплата</span>
-            <strong>${escapeHtml(formatSupportStart(billing.nextPaymentISO))}</strong>
+            <span>Последняя фактическая оплата</span>
+            <strong>${escapeHtml(formatSupportStart(billing.lastPaymentISO))}</strong>
           </div>
         </div>
 
         <div class="support-details-progress">
-          <div class="support-details-progress-heading">
-            <span>До оплаты</span>
-            <strong>${escapeHtml(supportCountdownText(billing.daysUntil))}</strong>
+          <div class="support-schedule-row">
+            <span>По графику</span>
+            <strong>${escapeHtml(formatSupportStart(billing.baseNextPaymentISO))}</strong>
+          </div>
+          <div class="support-schedule-row current">
+            <span>Текущий срок</span>
+            <strong>
+              ${escapeHtml(formatSupportStart(billing.nextPaymentISO))}
+              ${billing.shiftDays
+                ? `<b class="support-shift-note">${escapeHtml(formatSupportShift(billing.shiftDays))}</b>`
+                : ""}
+            </strong>
           </div>
           <span class="client-progress-bar support-details-progress-bar">
-            <span class="client-progress-fill"
-                  style="width:${billing.progress}%"></span>
+            <span class="client-progress-fill" style="width:${billing.progress}%"></span>
           </span>
+          <div class="support-details-countdown ${billing.daysUntil <= 0 ? "due" : ""}">
+            ${escapeHtml(supportCountdownText(billing.daysUntil))}
+          </div>
+          <button type="button"
+                  class="support-payment-action"
+                  data-action="open-support-payment-confirm"
+                  data-id="${escapeHtml(entry.id)}"
+                  ${supportBusy ? "disabled" : ""}>
+            ${paymentActionText}
+          </button>
         </div>
 
         <div class="support-shift-section">
-          <div class="support-shift-title">Сместить оплату</div>
+          <div class="support-shift-title">Изменить текущий срок</div>
           <label class="support-shift-label" for="support-shift-days">
-            Перенести вперёд на
+            На сколько дней сдвинуть ${escapeHtml(formatSupportCompact(billing.nextPaymentISO))}
           </label>
           <div class="support-shift-input-wrap">
             <input id="support-shift-days"
-                   type="number"
-                   min="1"
-                   max="365"
-                   step="1"
-                   inputmode="numeric"
-                   placeholder="0"
+                   type="text"
+                   inputmode="text"
+                   pattern="[+-]?\\d*"
+                   placeholder="+7 или -7"
                    value="${escapeHtml(state.supportShiftDays)}"
                    data-bind="supportShiftDays"
                    ${supportBusy ? "disabled" : ""}>
             <span>дней</span>
+          </div>
+          <div class="support-shift-preview"
+               data-role="support-shift-preview"
+               ${previewData.valid ? "" : "hidden"}>
+            ${escapeHtml(previewData.previewText)}
           </div>
         </div>
 
@@ -2157,8 +2453,8 @@ function renderSupportDetailsModal() {
           </button>
           <button class="btn-blue"
                   data-action="shift-support-payment"
-                  ${canShift ? "" : "disabled"}>
-            ${state.supportShiftPending ? "Сохраняем..." : "Сместить"}
+                  ${!supportBusy && previewData.valid ? "" : "disabled"}>
+            ${state.supportShiftPending ? "Сохраняем..." : "Применить"}
           </button>
         </div>
       </div>
@@ -2167,43 +2463,328 @@ function renderSupportDetailsModal() {
 
 async function shiftSupportPayment() {
   if (state.supportShiftPending) return;
-
-  const entry = monthlySupportEntries().find(
-    (item) => item.id === state.supportDetailsId
-  );
-  const shiftDays = Number(state.supportShiftDays);
+  const entry = supportEntryById();
   if (!entry) {
     showToast("Данные ведения не найдены.", "error");
     return;
   }
-  if (!Number.isInteger(shiftDays) || shiftDays < 1 || shiftDays > 365) {
-    showToast("Укажите количество дней от 1 до 365.", "error");
+  const previewData = supportShiftPreview(entry, state.supportShiftDays);
+  if (!previewData.valid) {
+    showToast("Укажите корректный сдвиг от −365 до 365 дней.", "error");
     return;
   }
 
   const billing = supportBillingCycle(entry);
-  const shiftedDateISO = format(
-    addDays(parseISO(billing.nextPaymentISO), shiftDays),
-    "yyyy-MM-dd"
-  );
-
   state.supportShiftPending = true;
   render();
   try {
     await updateDoc(doc(db, "packages", entry.id), {
-      supportPaymentAnchorISO: billing.periodStartISO,
-      supportNextPaymentISO: shiftedDateISO
+      supportLastPaymentISO: billing.lastPaymentISO,
+      supportBillingAnchorISO: billing.billingAnchorISO,
+      supportBillingDay: billing.billingDay,
+      supportPaymentShiftDays: previewData.totalShiftDays,
+      supportPaymentAnchorISO: deleteField(),
+      supportNextPaymentISO: deleteField()
     });
     state.supportShiftDays = "";
     showToast(
-      `Следующая оплата: ${formatSupportStart(shiftedDateISO)}.`,
+      `Новый срок: ${formatSupportStart(previewData.nextPaymentISO)}.`,
       "success"
     );
   } catch (err) {
     console.error("Ошибка переноса оплаты:", err);
-    showToast("Не удалось перенести оплату.", "error");
+    showToast("Не удалось изменить срок оплаты.", "error");
   } finally {
     state.supportShiftPending = false;
+    render();
+  }
+}
+
+function openSupportPaymentHistory() {
+  if (supportDetailsBusy()) return;
+  state.supportHistoryOpen = true;
+  render();
+}
+
+function closeSupportPaymentHistory() {
+  if (state.supportUndoPending) return;
+  state.supportHistoryOpen = false;
+  state.supportUndoConfirmOpen = false;
+  render();
+}
+
+function supportPaymentTimingText(payment) {
+  const difference = dateDiffInDays(payment.markedISO, payment.paymentISO);
+  if (difference === 0) return "в день срока";
+  if (difference < 0) {
+    const days = Math.abs(difference);
+    return `заранее на ${days} ${pluralDays(days)}`;
+  }
+  return `после срока на ${difference} ${pluralDays(difference)}`;
+}
+
+function renderSupportPaymentHistoryModal() {
+  const entry = supportEntryById();
+  if (!entry) return "";
+  const history = [...entry.paymentHistory].reverse();
+
+  return `
+    <div class="modal-overlay support-details-overlay support-history-overlay">
+      <div class="modal support-details-modal support-history-modal">
+        <div class="support-details-header">
+          <h3>История оплаты</h3>
+          <button type="button"
+                  class="support-modal-close-icon"
+                  data-action="close-support-history"
+                  aria-label="Закрыть">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8" d="m6 6 12 12M18 6 6 18"></path>
+            </svg>
+          </button>
+        </div>
+        <div class="support-details-client">${escapeHtml(entry.name)}</div>
+        <div class="support-history-list">
+          ${history.length
+            ? history.map((payment, index) => `
+                <div class="support-history-item">
+                  <strong>Отмечено ${escapeHtml(formatSupportStart(payment.markedISO))}</strong>
+                  <span>Закрыт срок: ${escapeHtml(formatSupportStart(payment.paymentISO))}</span>
+                  <small>${escapeHtml(supportPaymentTimingText(payment))}${payment.shiftDays
+                    ? ` · перенос ${escapeHtml(formatSupportShift(payment.shiftDays))}`
+                    : ""}</small>
+                  ${index === 0
+                    ? `<button type="button"
+                               class="support-history-undo"
+                               data-action="open-support-undo-confirm">
+                         Отменить последнюю отметку
+                       </button>`
+                    : ""}
+                </div>`).join("")
+            : `<div class="support-history-empty">Платежей пока нет</div>`}
+        </div>
+        <div class="modal-actions support-history-actions">
+          <button class="btn-gray" data-action="close-support-history">Закрыть</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function supportPreviousSchedule(entry) {
+  const payment = entry.paymentHistory[entry.paymentHistory.length - 1];
+  if (!payment) return null;
+  if (payment.previousSchedule) return payment.previousSchedule;
+
+  const baseDueISO = addDaysISO(payment.paymentISO, -payment.shiftDays);
+  const billingDay = parseISO(baseDueISO).getDate();
+  const previousHistory = entry.paymentHistory[entry.paymentHistory.length - 2];
+  return {
+    lastPaymentISO: previousHistory?.markedISO || entry.startISO,
+    billingAnchorISO: addCalendarMonthsISO(baseDueISO, -1, billingDay),
+    billingDay,
+    paymentShiftDays: payment.shiftDays
+  };
+}
+
+function restoredSupportBilling(entry) {
+  const previous = supportPreviousSchedule(entry);
+  if (!previous) return null;
+  return supportBillingCycle({
+    ...entry,
+    lastPaymentISO: previous.lastPaymentISO,
+    billingAnchorISO: previous.billingAnchorISO,
+    billingDay: previous.billingDay,
+    paymentShiftDays: previous.paymentShiftDays,
+    paymentAnchorISO: "",
+    nextPaymentISO: ""
+  });
+}
+
+function openSupportUndoConfirm() {
+  const entry = supportEntryById();
+  if (!entry?.paymentHistory.length || state.supportUndoPending) return;
+  state.supportUndoConfirmOpen = true;
+  render();
+}
+
+function closeSupportUndoConfirm() {
+  if (state.supportUndoPending) return;
+  state.supportUndoConfirmOpen = false;
+  render();
+}
+
+function renderSupportUndoConfirmModal() {
+  const entry = supportEntryById();
+  const payment = entry?.paymentHistory[entry.paymentHistory.length - 1];
+  const restored = entry ? restoredSupportBilling(entry) : null;
+  if (!entry || !payment || !restored) return "";
+  return `
+    <div class="modal-overlay support-details-overlay support-undo-confirm-overlay">
+      <div class="modal support-payment-confirm-modal">
+        <h3>Отменить отметку?</h3>
+        <p class="support-payment-confirm-client">${escapeHtml(entry.name)}</p>
+        <p class="support-payment-confirm-copy">
+          Оплата за срок ${escapeHtml(formatSupportStart(payment.paymentISO))} будет отменена.
+          Текущий срок снова станет ${escapeHtml(formatSupportStart(restored.nextPaymentISO))}
+        </p>
+        <div class="modal-actions">
+          <button class="btn-gray"
+                  data-action="close-support-undo-confirm"
+                  ${state.supportUndoPending ? "disabled" : ""}>
+            Назад
+          </button>
+          <button class="btn-red"
+                  data-action="confirm-support-undo"
+                  ${state.supportUndoPending ? "disabled" : ""}>
+            ${state.supportUndoPending ? "Отменяем..." : "Отменить оплату"}
+          </button>
+        </div>
+      </div>
+    </div>`;
+}
+
+async function confirmSupportUndo() {
+  if (state.supportUndoPending) return;
+  const entry = supportEntryById();
+  const previous = entry ? supportPreviousSchedule(entry) : null;
+  if (!entry || !previous || !entry.paymentHistory.length) {
+    showToast("Последняя оплата не найдена.", "error");
+    return;
+  }
+
+  state.supportUndoPending = true;
+  render();
+  try {
+    await updateDoc(doc(db, "packages", entry.id), {
+      supportLastPaymentISO: previous.lastPaymentISO,
+      supportBillingAnchorISO: previous.billingAnchorISO,
+      supportBillingDay: previous.billingDay,
+      supportPaymentShiftDays: previous.paymentShiftDays,
+      supportPaymentHistory: entry.paymentHistory.slice(0, -1),
+      supportPaymentAnchorISO: deleteField(),
+      supportNextPaymentISO: deleteField()
+    });
+    state.supportUndoConfirmOpen = false;
+    showToast("Последняя отметка оплаты отменена.", "success");
+  } catch (err) {
+    console.error("Ошибка отмены оплаты:", err);
+    showToast("Не удалось отменить оплату.", "error");
+  } finally {
+    state.supportUndoPending = false;
+    render();
+  }
+}
+
+function openSupportPaymentConfirm(id) {
+  if (supportDetailsBusy()) return;
+  const entry = supportEntryById(id);
+  if (!entry) {
+    showToast("Данные ведения не найдены.", "error");
+    return;
+  }
+  state.supportDetailsId = id;
+  state.supportPaymentConfirmOpen = true;
+  state.supportHistoryOpen = false;
+  render();
+}
+
+function closeSupportPaymentConfirm() {
+  if (state.supportPaymentPending) return;
+  state.supportPaymentConfirmOpen = false;
+  render();
+}
+
+function supportNextAfterPayment(billing) {
+  const nextBillingDay = billing.shiftDays
+    ? parseISO(billing.nextPaymentISO).getDate()
+    : billing.billingDay;
+  return addCalendarMonthsISO(
+    billing.nextPaymentISO,
+    1,
+    nextBillingDay
+  );
+}
+
+function renderSupportPaymentConfirmModal() {
+  const entry = supportEntryById();
+  if (!entry) return "";
+  const billing = supportBillingCycle(entry);
+  const isEarly = billing.daysUntil > 0;
+  const followingPaymentISO = supportNextAfterPayment(billing);
+  return `
+    <div class="modal-overlay support-details-overlay support-payment-confirm-overlay">
+      <div class="modal support-payment-confirm-modal">
+        <h3>${isEarly ? "Оплата заранее" : "Подтвердить оплату"}</h3>
+        <p class="support-payment-confirm-client">${escapeHtml(entry.name)}</p>
+        <p class="support-payment-confirm-copy">
+          Закрыть срок ${escapeHtml(formatSupportStart(billing.nextPaymentISO))}?
+          Фактическая оплата будет отмечена ${escapeHtml(formatSupportStart(currentLocalDateISO()))}
+          Следующий срок будет ${escapeHtml(formatSupportStart(followingPaymentISO))}
+        </p>
+        <div class="modal-actions">
+          <button class="btn-gray"
+                  data-action="close-support-payment-confirm"
+                  ${state.supportPaymentPending ? "disabled" : ""}>
+            Отмена
+          </button>
+          <button class="btn-blue"
+                  data-action="confirm-support-payment"
+                  ${state.supportPaymentPending ? "disabled" : ""}>
+            ${state.supportPaymentPending
+              ? "Сохраняем..."
+              : isEarly ? "Оплатить заранее" : "Подтвердить"}
+          </button>
+        </div>
+      </div>
+    </div>`;
+}
+
+async function confirmSupportPayment() {
+  if (state.supportPaymentPending) return;
+  const entry = supportEntryById();
+  if (!entry) {
+    showToast("Данные ведения не найдены.", "error");
+    return;
+  }
+
+  const billing = supportBillingCycle(entry);
+  const markedISO = currentLocalDateISO();
+  const paymentRecord = {
+    paymentISO: billing.nextPaymentISO,
+    markedISO,
+    shiftDays: billing.shiftDays,
+    previousSchedule: {
+      lastPaymentISO: billing.lastPaymentISO,
+      billingAnchorISO: billing.billingAnchorISO,
+      billingDay: billing.billingDay,
+      paymentShiftDays: billing.shiftDays
+    }
+  };
+  const nextBillingDay = billing.shiftDays
+    ? parseISO(billing.nextPaymentISO).getDate()
+    : billing.billingDay;
+
+  state.supportPaymentPending = true;
+  render();
+  try {
+    await updateDoc(doc(db, "packages", entry.id), {
+      supportLastPaymentISO: markedISO,
+      supportBillingAnchorISO: billing.nextPaymentISO,
+      supportBillingDay: nextBillingDay,
+      supportPaymentShiftDays: 0,
+      supportPaymentHistory: [...entry.paymentHistory, paymentRecord],
+      supportPaymentAnchorISO: deleteField(),
+      supportNextPaymentISO: deleteField()
+    });
+    state.supportPaymentConfirmOpen = false;
+    showToast(
+      `Срок ${formatSupportStart(billing.nextPaymentISO)} закрыт.`,
+      "success"
+    );
+  } catch (err) {
+    console.error("Ошибка подтверждения оплаты:", err);
+    showToast("Не удалось сохранить оплату.", "error");
+  } finally {
+    state.supportPaymentPending = false;
     render();
   }
 }
@@ -3907,24 +4488,79 @@ document.addEventListener("click", async (e) => {
       await shiftSupportPayment();
       break;
 
-    case "toggle-support-start-calendar":
+    case "open-support-dates-edit":
       await haptic("soft");
-      toggleSupportStartCalendar();
+      openSupportDatesEdit();
       break;
 
-    case "support-start-calendar-prev":
-      await haptic("soft");
-      moveSupportStartCalendar(-1);
+    case "close-support-dates-edit":
+      await haptic("rigid");
+      closeSupportDatesEdit();
       break;
 
-    case "support-start-calendar-next":
+    case "toggle-support-dates-calendar":
       await haptic("soft");
-      moveSupportStartCalendar(1);
+      toggleSupportDatesCalendar(el.dataset.field);
       break;
 
-    case "select-support-start-date":
+    case "support-dates-calendar-prev":
       await haptic("soft");
-      await selectSupportStartDate(el.dataset.date);
+      moveSupportDatesCalendar(-1);
+      break;
+
+    case "support-dates-calendar-next":
+      await haptic("soft");
+      moveSupportDatesCalendar(1);
+      break;
+
+    case "select-support-date":
+      await haptic("soft");
+      selectSupportDate(el.dataset.date);
+      break;
+
+    case "save-support-dates":
+      void haptic("rigid");
+      await saveSupportDates();
+      break;
+
+    case "open-support-history":
+      await haptic("soft");
+      openSupportPaymentHistory();
+      break;
+
+    case "close-support-history":
+      await haptic("rigid");
+      closeSupportPaymentHistory();
+      break;
+
+    case "open-support-payment-confirm":
+      await haptic("soft");
+      openSupportPaymentConfirm(el.dataset.id);
+      break;
+
+    case "close-support-payment-confirm":
+      await haptic("rigid");
+      closeSupportPaymentConfirm();
+      break;
+
+    case "confirm-support-payment":
+      void haptic("rigid");
+      await confirmSupportPayment();
+      break;
+
+    case "open-support-undo-confirm":
+      await haptic("soft");
+      openSupportUndoConfirm();
+      break;
+
+    case "close-support-undo-confirm":
+      await haptic("rigid");
+      closeSupportUndoConfirm();
+      break;
+
+    case "confirm-support-undo":
+      void haptic("rigid");
+      await confirmSupportUndo();
       break;
 
     // ----- OPEN PACKAGE MODAL rigid -----
@@ -4075,6 +4711,31 @@ async function hapticTap() {
   // безопасное закрытие модалок при клике в фон
 document.addEventListener("click", (e) => {
   if (e.target.classList.contains("modal-overlay")) {
+    if (state.supportUndoConfirmOpen && !state.supportUndoPending) {
+      state.supportUndoConfirmOpen = false;
+      render();
+      return;
+    }
+
+    if (state.supportPaymentConfirmOpen && !state.supportPaymentPending) {
+      state.supportPaymentConfirmOpen = false;
+      render();
+      return;
+    }
+
+    if (state.supportDatesEditOpen && !state.supportDatesPending) {
+      state.supportDatesEditOpen = false;
+      state.supportDatesCalendarField = null;
+      render();
+      return;
+    }
+
+    if (state.supportHistoryOpen) {
+      state.supportHistoryOpen = false;
+      render();
+      return;
+    }
+
     if (
       state.packageModalOpen &&
       state.packageMemberPickerOpen !== null
@@ -4098,9 +4759,17 @@ document.addEventListener("click", (e) => {
     state.bookingMoveTimeOpen = false;
     state.supportDetailsOpen = false;
     state.supportDetailsId = null;
-    state.supportStartCalendarOpen = false;
-    state.supportStartCalendarMonthISO = currentMonthStartISO();
-    state.supportStartPending = false;
+    state.supportDatesEditOpen = false;
+    state.supportDatesDraftStartISO = "";
+    state.supportDatesDraftLastPaymentISO = "";
+    state.supportDatesCalendarField = null;
+    state.supportDatesCalendarMonthISO = currentMonthStartISO();
+    state.supportDatesPending = false;
+    state.supportHistoryOpen = false;
+    state.supportPaymentConfirmOpen = false;
+    state.supportPaymentPending = false;
+    state.supportUndoConfirmOpen = false;
+    state.supportUndoPending = false;
     state.supportShiftDays = "";
     state.supportShiftPending = false;
     state.confirm.open = false;
