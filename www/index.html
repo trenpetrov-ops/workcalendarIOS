@@ -8,6 +8,7 @@
     <title>Trainer Calendar</title>
 
     <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="./icons/icon-192.png">
     <link rel="stylesheet" href="style.css" />
     <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js"></script>
 
@@ -27,6 +28,14 @@
 <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
+        const isLocalDev = ['127.0.0.1', 'localhost'].includes(location.hostname);
+        if (isLocalDev) {
+          navigator.serviceWorker.getRegistrations()
+            .then(regs => regs.forEach(reg => reg.unregister()))
+            .catch(() => {});
+          return;
+        }
+
         navigator.serviceWorker.register('./service-worker.js')
           .then(reg => console.log('✅ ServiceWorker зарегистрирован', reg))
           .catch(err => console.log('❌ Ошибка ServiceWorker', err));
