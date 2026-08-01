@@ -84,6 +84,7 @@ const ru = {
 // ---------- Глобальное состояние ----------
 let bookings = [];
 let packages = [];
+let calendarEvents = [];
 
 const TIME_SETTINGS_STORAGE_KEY = "workcalendar.timeSettings.v1";
 const DAY_MINUTES = 24 * 60;
@@ -180,6 +181,14 @@ const state = {
   supportShiftDays: "",
   supportShiftPending: false,
 
+  // события под календарём
+  calendarDayDetailsOpen: false,
+  calendarDayDetailsISO: "",
+  calendarEventComposerOpen: false,
+  calendarEventDraft: "",
+  calendarEventPending: false,
+  calendarEventDeleteId: null,
+
   // выбранная бронь (для показа крестика)
   selectedBookingId: null,
 
@@ -225,6 +234,11 @@ function initFirestoreSubscriptions() {
 
   onSnapshot(collection(db, "packages"), (snap) => {
     packages = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    render();
+  });
+
+  onSnapshot(collection(db, "calendarEvents"), (snap) => {
+    calendarEvents = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     render();
   });
 }
@@ -310,6 +324,11 @@ function initGlobalHandlers() {
         preview.hidden = !previewData.valid;
         preview.textContent = previewData.previewText;
       }
+      return;
+    }
+
+    if (el.matches("[data-bind='calendarEventDraft']")) {
+      state.calendarEventDraft = el.value;
     }
   });
 
@@ -604,6 +623,12 @@ function closeAllTransient() {
   state.supportUndoPending = false;
   state.supportShiftDays = "";
   state.supportShiftPending = false;
+  state.calendarDayDetailsOpen = false;
+  state.calendarDayDetailsISO = "";
+  state.calendarEventComposerOpen = false;
+  state.calendarEventDraft = "";
+  state.calendarEventPending = false;
+  state.calendarEventDeleteId = null;
   state.selectedBookingId = null;
 
   // ❗ confirm НЕ трогаем!
@@ -1300,20 +1325,219 @@ function escapeHtml(str = "") {
     .replace(/'/g, "&#39;");
 }
 
+function cleanAgendaNames(values) {
+  return [...new Set(
+    values
+      .map((value) => String(value || "").trim())
+      .filter(Boolean)
+  )];
+}
+
+function packageAgendaKey(pkg) {
+  const names = cleanAgendaNames(
+    Array.isArray(pkg.clientNames) && pkg.clientNames.length
+      ? pkg.clientNames
+      : [pkg.clientName]
+  );
+  return names.sort((a, b) => a.localeCompare(b, "ru")).join("\u0001");
+}
+
+function packageAgendaOrder(pkg) {
+  const createdAt = Number(pkg.createdAt);
+  if (Number.isFinite(createdAt) && createdAt > 0) return createdAt;
+  if (isValidDateISO(pkg.addedISO)) return parseISO(pkg.addedISO).getTime();
+  return 0;
+}
+
+function hasReplacementPackage(pkg, trainingPackages) {
+  const key = packageAgendaKey(pkg);
+  if (!key) return false;
+  const currentOrder = packageAgendaOrder(pkg);
+  const currentIsFull = Number(pkg.used || 0) >= Number(pkg.size || 0);
+
+  return trainingPackages.some((candidate) => {
+    if (candidate.id === pkg.id || packageAgendaKey(candidate) !== key) return false;
+    const candidateOrder = packageAgendaOrder(candidate);
+    if (candidateOrder > currentOrder) return true;
+
+    const candidateIsActive = Number(candidate.used || 0) < Number(candidate.size || 0);
+    return candidateOrder === currentOrder && currentIsFull && candidateIsActive;
+  });
+}
+
+function calendarAgendaByDate() {
+  const byDate = new Map();
+  const addItem = (item) => {
+    if (!isValidDateISO(item.dateISO)) return;
+    if (!byDate.has(item.dateISO)) byDate.set(item.dateISO, []);
+    byDate.get(item.dateISO).push(item);
+  };
+
+  monthlySupportEntries().forEach((entry) => {
+    const billing = supportBillingCycle(entry);
+    addItem({
+      id: `support-due-${entry.id}`,
+      kind: "support-due",
+      dateISO: billing.nextPaymentISO,
+      names: [entry.name]
+    });
+  });
+
+  const trainingPackages = packages.filter(
+    (pkg) => !pkg.monthlySupport && !pkg.placeholder
+  );
+  trainingPackages.forEach((pkg) => {
+    if (hasReplacementPackage(pkg, trainingPackages)) return;
+    const packageSize = Number(pkg.size);
+    if (!Number.isInteger(packageSize) || packageSize <= 0) return;
+
+    const sessions = bookings
+      .filter((booking) => booking.packageId === pkg.id && isValidDateISO(booking.dateISO))
+      .sort(
+        (a, b) =>
+          a.dateISO.localeCompare(b.dateISO) ||
+          bookingSortValue(a) - bookingSortValue(b)
+      );
+    const finalSession = sessions.find(
+      (booking) => Number(booking.sessionNumber) === packageSize
+    ) || (sessions.length >= packageSize ? sessions[packageSize - 1] : null);
+    if (!finalSession) return;
+
+    const names = cleanAgendaNames(
+      Array.isArray(pkg.clientNames) && pkg.clientNames.length
+        ? pkg.clientNames
+        : [pkg.clientName || finalSession.clientName]
+    );
+    if (!names.length) return;
+
+    addItem({
+      id: `package-end-${pkg.id}`,
+      kind: "package-end",
+      dateISO: finalSession.dateISO,
+      names,
+      packageSize,
+      isGroup: names.length > 1
+    });
+  });
+
+  calendarEvents.forEach((event) => {
+    const title = String(event.title || "").trim();
+    if (!title) return;
+    addItem({
+      id: event.id,
+      kind: "custom",
+      dateISO: event.dateISO,
+      title,
+      createdAt: Number(event.createdAt) || 0
+    });
+  });
+
+  const priority = {
+    "support-due": 0,
+    "package-end": 1,
+    custom: 2
+  };
+  byDate.forEach((items) => {
+    items.sort(
+      (a, b) =>
+        (priority[a.kind] ?? 9) - (priority[b.kind] ?? 9) ||
+        (a.createdAt || 0) - (b.createdAt || 0)
+    );
+  });
+
+  return byDate;
+}
+
+function agendaDateLabel(dateISO, withYear = false) {
+  if (!isValidDateISO(dateISO)) return "";
+  const text = new Intl.DateTimeFormat("ru-RU", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    ...(withYear ? { year: "numeric" } : {})
+  }).format(parseISO(dateISO));
+  return text[0].toUpperCase() + text.slice(1);
+}
+
+function agendaNamesText(item) {
+  return cleanAgendaNames(item.names || []).join(" ");
+}
+
+function agendaShortText(item) {
+  return item.kind === "custom" ? item.title : agendaNamesText(item);
+}
+
+function agendaItemTitle(item) {
+  const todayISO = currentLocalDateISO();
+  const names = agendaNamesText(item);
+
+  if (item.kind === "support-due") {
+    const verb = item.dateISO < todayISO
+      ? "Закончился"
+      : item.dateISO === todayISO ? "Заканчивается" : "Закончится";
+    return `${verb} оплаченный период: ${names}`;
+  }
+  if (item.kind === "package-end") {
+    const verb = item.dateISO < todayISO
+      ? "Закончился"
+      : item.dateISO === todayISO ? "Заканчивается" : "Закончится";
+    return `${verb} ${item.isGroup ? "общий пакет" : "пакет"}: ${names}`;
+  }
+  return item.title;
+}
+
+function agendaItemMeta(item) {
+  if (item.kind === "support-due") return "Помесячное ведение";
+  if (item.kind === "package-end") {
+    return `Последняя тренировка ${item.packageSize} из ${item.packageSize}`;
+  }
+  return "Добавлено вручную";
+}
+
+function agendaItemKindLabel(item) {
+  if (item.kind === "support-due") return "Ведение";
+  if (item.kind === "package-end") return "Пакет";
+  return "Событие";
+}
+
+function renderAgendaCell(dateISO, items) {
+  const labels = [...new Set(items.map(agendaShortText).filter(Boolean))];
+  const visible = labels.slice(0, 2);
+  const extraCount = Math.max(0, labels.length - visible.length);
+  const isToday = dateISO === currentLocalDateISO();
+  const summary = items.length
+    ? items.map((item) => agendaItemTitle(item)).join(". ")
+    : "Событий нет";
+
+  return `
+    <td class="calendar-agenda-cell ${items.length ? "has-events" : ""} ${isToday ? "today" : ""}">
+      <button type="button"
+              data-action="open-calendar-day-details"
+              data-date="${dateISO}"
+              aria-label="${escapeHtml(`${agendaDateLabel(dateISO)}. ${summary}`)}">
+        ${visible.map((label) => `<span>${escapeHtml(label)}</span>`).join("")}
+        ${extraCount ? `<b>+${extraCount}</b>` : ""}
+      </button>
+    </td>`;
+}
+
 // ---------- Рендер ----------
 function render() {
   const app = document.getElementById("app");
   if (!app) return;
 
   if (currentPage === "calendar") {
+    const agendaByDate = calendarAgendaByDate();
     app.className = "app-calendar";
     app.innerHTML = `
       ${renderHeader()}
-      ${renderTable()}
+      ${renderTable(agendaByDate)}
+      ${renderTodayAgenda(agendaByDate)}
       ${state.modalOpen ? renderAddBookingModal() : ""}
       ${state.timeSettingsModalOpen ? renderTimeSettingsModal() : ""}
       ${state.packageModalOpen ? renderPackageModal() : ""}
       ${state.bookingDetailsOpen ? renderBookingDetailsModal() : ""}
+      ${state.calendarDayDetailsOpen ? renderCalendarDayDetailsModal() : ""}
       ${state.confirm.open ? renderConfirmModal() : ""}
     `;
   }
@@ -1342,6 +1566,7 @@ function render() {
       state.supportHistoryOpen ||
       state.supportPaymentConfirmOpen ||
       state.supportUndoConfirmOpen ||
+      state.calendarDayDetailsOpen ||
       state.confirm.open ||
       state.timeSettingsModalOpen
     ) {
@@ -1383,6 +1608,7 @@ function updateFabVisibility() {
     state.packageModalOpen ||
     state.bookingDetailsOpen ||
     state.supportDetailsOpen ||
+    state.calendarDayDetailsOpen ||
     state.confirm.open ||
     state.timeSettingsModalOpen
   ) {
@@ -1435,7 +1661,7 @@ function renderHeader() {
 // ---------- Остальной код ----------
 // (всё, что идёт после renderHeader, полностью совпадает с твоим оригиналом)
 
-function renderWeek(offset) {
+function renderWeek(offset, agendaByDate) {
   const base = addWeeks(state.anchorDate, offset);
   const week = weekDays(base);
   const ruShort = ["вс", "пн", "вт", "ср", "чт", "пт", "сб"];
@@ -1502,13 +1728,18 @@ function renderWeek(offset) {
     html += `</tr>`;
   });
 
-  html += `</tbody></table>`;
+  html += `</tbody><tfoot><tr>`;
+  week.forEach((day) => {
+    const dateISO = format(day, "yyyy-MM-dd");
+    html += renderAgendaCell(dateISO, agendaByDate.get(dateISO) || []);
+  });
+  html += `</tr></tfoot></table>`;
   return html;
 }
 
 
 // ---------- Основная таблица календаря ----------
-function renderTable() {
+function renderTable(agendaByDate) {
   return `
     <div class="calendar-container">
       <div class="calendar-left">
@@ -1517,9 +1748,9 @@ function renderTable() {
       <div class="calendar-right">
         <div class="calendar-scroll">
           <div class="calendar-scroll-inner">
-            <div class="calendar-week">${renderWeek(-1)}</div>
-            <div class="calendar-week">${renderWeek(0)}</div>
-            <div class="calendar-week">${renderWeek(1)}</div>
+            <div class="calendar-week">${renderWeek(-1, agendaByDate)}</div>
+            <div class="calendar-week">${renderWeek(0, agendaByDate)}</div>
+            <div class="calendar-week">${renderWeek(1, agendaByDate)}</div>
           </div>
         </div>
       </div>
@@ -1529,6 +1760,7 @@ function renderTable() {
 
 function renderFixedTimes() {
   const columns = visibleTimeColumns();
+  const totalColspan = columns.reduce((sum, column) => sum + column.colspan, 0);
   let html = `<table class="fixed-time-table"><thead><tr>`;
 
   columns.forEach((column) => {
@@ -1557,8 +1789,244 @@ function renderFixedTimes() {
     html += `</tr>`;
   });
 
-  html += `</tbody></table>`;
+  html += `
+    </tbody>
+    <tfoot>
+      <tr>
+        <td class="calendar-agenda-label" colspan="${totalColspan}">
+          <span>Оплата</span>
+        </td>
+      </tr>
+    </tfoot>
+  </table>`;
   return html;
+}
+
+function renderAgendaDetailsList(items, allowDelete = false) {
+  if (!items.length) {
+    return `<div class="calendar-agenda-empty">На этот день ничего не запланировано</div>`;
+  }
+
+  return items.map((item) => `
+    <div class="calendar-agenda-detail-item ${item.kind}">
+      <div class="calendar-agenda-detail-copy">
+        <span>${escapeHtml(agendaItemKindLabel(item))}</span>
+        <strong>${escapeHtml(agendaItemTitle(item))}</strong>
+        <small>${escapeHtml(agendaItemMeta(item))}</small>
+      </div>
+      ${allowDelete && item.kind === "custom"
+        ? `<button type="button"
+                   class="calendar-event-delete"
+                   data-action="delete-calendar-event"
+                   data-id="${escapeHtml(item.id)}"
+                   aria-label="Удалить событие"
+                   title="Удалить событие"
+                   ${state.calendarEventPending ? "disabled" : ""}>
+             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+               <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14M10 10v6m4-6v6"></path>
+             </svg>
+           </button>`
+        : ""}
+    </div>`).join("");
+}
+
+function renderTodayAgenda(agendaByDate) {
+  const todayISO = currentLocalDateISO();
+  const items = agendaByDate.get(todayISO) || [];
+  if (!items.length) return "";
+
+  return `
+    <section class="calendar-today-agenda" aria-label="События на сегодня">
+      <button type="button"
+              class="calendar-today-agenda-header"
+              data-action="open-calendar-day-details"
+              data-date="${todayISO}">
+        <span>Сегодня</span>
+        <strong>${escapeHtml(agendaDateLabel(todayISO))}</strong>
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+          <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m9 18 6-6-6-6"></path>
+        </svg>
+      </button>
+      <div class="calendar-today-agenda-list">
+        ${renderAgendaDetailsList(items)}
+      </div>
+    </section>`;
+}
+
+function openCalendarDayDetails(dateISO) {
+  if (!isValidDateISO(dateISO)) return;
+  state.calendarDayDetailsOpen = true;
+  state.calendarDayDetailsISO = dateISO;
+  state.calendarEventComposerOpen = false;
+  state.calendarEventDraft = "";
+  state.calendarEventPending = false;
+  state.calendarEventDeleteId = null;
+  render();
+}
+
+function closeCalendarDayDetails() {
+  if (state.calendarEventPending) return;
+  state.calendarDayDetailsOpen = false;
+  state.calendarDayDetailsISO = "";
+  state.calendarEventComposerOpen = false;
+  state.calendarEventDraft = "";
+  state.calendarEventDeleteId = null;
+  render();
+}
+
+function openCalendarEventComposer() {
+  if (state.calendarEventPending) return;
+  state.calendarEventComposerOpen = true;
+  state.calendarEventDraft = "";
+  render();
+  requestAnimationFrame(() => {
+    document.querySelector("[data-bind='calendarEventDraft']")?.focus();
+  });
+}
+
+function closeCalendarEventComposer() {
+  if (state.calendarEventPending) return;
+  state.calendarEventComposerOpen = false;
+  state.calendarEventDraft = "";
+  render();
+}
+
+async function saveCalendarEvent() {
+  if (state.calendarEventPending) return;
+  const dateISO = state.calendarDayDetailsISO;
+  const title = state.calendarEventDraft.trim();
+  if (!isValidDateISO(dateISO)) {
+    showToast("Дата события не найдена.", "error");
+    return;
+  }
+  if (!title) {
+    showToast("Напишите название события.", "error");
+    return;
+  }
+  if (title.length > 100) {
+    showToast("Название должно быть не длиннее 100 символов.", "error");
+    return;
+  }
+
+  state.calendarEventPending = true;
+  render();
+  try {
+    await addDoc(collection(db, "calendarEvents"), {
+      dateISO,
+      title,
+      createdISO: currentLocalDateISO(),
+      createdAt: Date.now()
+    });
+    state.calendarEventComposerOpen = false;
+    state.calendarEventDraft = "";
+    showToast("Событие добавлено.", "success");
+  } catch (err) {
+    console.error("Ошибка добавления события:", err);
+    showToast("Не удалось добавить событие.", "error");
+  } finally {
+    state.calendarEventPending = false;
+    render();
+  }
+}
+
+async function deleteCalendarEvent(eventId) {
+  if (state.calendarEventPending) return;
+  const event = calendarEvents.find((item) => item.id === eventId);
+  if (!event) {
+    showToast("Событие уже удалено.", "error");
+    return;
+  }
+
+  state.calendarEventPending = true;
+  state.calendarEventDeleteId = eventId;
+  render();
+  try {
+    await deleteDoc(doc(db, "calendarEvents", eventId));
+    showToast("Событие удалено.", "success");
+  } catch (err) {
+    console.error("Ошибка удаления события:", err);
+    showToast("Не удалось удалить событие.", "error");
+  } finally {
+    state.calendarEventPending = false;
+    state.calendarEventDeleteId = null;
+    render();
+  }
+}
+
+function renderCalendarDayDetailsModal() {
+  const dateISO = state.calendarDayDetailsISO;
+  if (!isValidDateISO(dateISO)) return "";
+  const items = calendarAgendaByDate().get(dateISO) || [];
+
+  return `
+    <div class="modal-overlay calendar-day-details-overlay">
+      <div class="modal calendar-day-details-modal">
+        <div class="calendar-day-details-header">
+          <div>
+            <span>События дня</span>
+            <h3>${escapeHtml(agendaDateLabel(dateISO, true))}</h3>
+          </div>
+          <button type="button"
+                  class="support-modal-close-icon"
+                  data-action="close-calendar-day-details"
+                  aria-label="Закрыть"
+                  ${state.calendarEventPending ? "disabled" : ""}>
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8" d="m6 6 12 12M18 6 6 18"></path>
+            </svg>
+          </button>
+        </div>
+
+        <div class="calendar-day-details-list">
+          ${renderAgendaDetailsList(items, true)}
+        </div>
+
+        ${state.calendarEventComposerOpen
+          ? `<div class="calendar-event-composer">
+               <label for="calendar-event-title">Новое событие</label>
+               <input id="calendar-event-title"
+                      type="text"
+                      maxlength="100"
+                      autocomplete="off"
+                      placeholder="Например, поездка к врачу"
+                      value="${escapeHtml(state.calendarEventDraft)}"
+                      data-bind="calendarEventDraft"
+                      ${state.calendarEventPending ? "disabled" : ""}>
+               <div class="calendar-event-composer-actions">
+                 <button type="button"
+                         class="btn-gray"
+                         data-action="close-calendar-event-composer"
+                         ${state.calendarEventPending ? "disabled" : ""}>
+                   Отмена
+                 </button>
+                 <button type="button"
+                         class="btn-blue"
+                         data-action="save-calendar-event"
+                         ${state.calendarEventPending ? "disabled" : ""}>
+                   ${state.calendarEventPending ? "Сохраняем..." : "Добавить"}
+                 </button>
+               </div>
+             </div>`
+          : `<button type="button"
+                     class="calendar-add-event-button"
+                     data-action="open-calendar-event-composer"
+                     ${state.calendarEventPending ? "disabled" : ""}>
+               <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" aria-hidden="true">
+                 <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 5v14M5 12h14"></path>
+               </svg>
+               <span>Добавить событие</span>
+             </button>`}
+
+        <div class="modal-actions calendar-day-details-actions">
+          <button type="button"
+                  class="btn-gray"
+                  data-action="close-calendar-day-details"
+                  ${state.calendarEventPending ? "disabled" : ""}>
+            Закрыть
+          </button>
+        </div>
+      </div>
+    </div>`;
 }
 
 function openTimeSettingsModal(column) {
@@ -4121,6 +4589,7 @@ async function savePackage() {
   }
 
   const addedISO = currentLocalDateISO();
+  const createdAt = Date.now();
 
   try {
     if (state.packageMonthly) {
@@ -4143,7 +4612,8 @@ async function savePackage() {
             clientName: name,
             monthlySupport: true,
             supportStartISO: state.packageStartISO,
-            addedISO
+            addedISO,
+            createdAt
           })
         )
       );
@@ -4151,7 +4621,8 @@ async function savePackage() {
       const data = {
         size: Number(state.packageSize || 10),
         used: 0,
-        addedISO
+        addedISO,
+        createdAt
       };
 
       if (names.length === 1) {
@@ -4367,6 +4838,36 @@ document.addEventListener("click", async (e) => {
       state.anchorDate = new Date();
       closeAllTransient();
       render();
+      break;
+
+    case "open-calendar-day-details":
+      await haptic("soft");
+      openCalendarDayDetails(el.dataset.date);
+      break;
+
+    case "close-calendar-day-details":
+      await haptic("rigid");
+      closeCalendarDayDetails();
+      break;
+
+    case "open-calendar-event-composer":
+      await haptic("soft");
+      openCalendarEventComposer();
+      break;
+
+    case "close-calendar-event-composer":
+      await haptic("rigid");
+      closeCalendarEventComposer();
+      break;
+
+    case "save-calendar-event":
+      void haptic("rigid");
+      await saveCalendarEvent();
+      break;
+
+    case "delete-calendar-event":
+      void haptic("rigid");
+      await deleteCalendarEvent(el.dataset.id);
       break;
 
     // ----- CLOSE MODAL -----
@@ -4711,6 +5212,18 @@ async function hapticTap() {
   // безопасное закрытие модалок при клике в фон
 document.addEventListener("click", (e) => {
   if (e.target.classList.contains("modal-overlay")) {
+    if (state.calendarDayDetailsOpen && !state.calendarEventPending) {
+      if (state.calendarEventComposerOpen) {
+        state.calendarEventComposerOpen = false;
+        state.calendarEventDraft = "";
+      } else {
+        state.calendarDayDetailsOpen = false;
+        state.calendarDayDetailsISO = "";
+      }
+      render();
+      return;
+    }
+
     if (state.supportUndoConfirmOpen && !state.supportUndoPending) {
       state.supportUndoConfirmOpen = false;
       render();
@@ -4772,6 +5285,12 @@ document.addEventListener("click", (e) => {
     state.supportUndoPending = false;
     state.supportShiftDays = "";
     state.supportShiftPending = false;
+    state.calendarDayDetailsOpen = false;
+    state.calendarDayDetailsISO = "";
+    state.calendarEventComposerOpen = false;
+    state.calendarEventDraft = "";
+    state.calendarEventPending = false;
+    state.calendarEventDeleteId = null;
     state.confirm.open = false;
     render();
   }
