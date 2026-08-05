@@ -8,10 +8,14 @@ body {
 
 :root {
   --calendar-row-height: 35px;
-  --calendar-agenda-row-height: 46px;
+  --calendar-agenda-row-height: 25px;
   --page-safe-top: calc(env(safe-area-inset-top, 0px) + 14px);
   --page-inline-padding: 16px;
   --page-topbar-height: 56px;
+  --calendar-header-gap: 17px;
+  --calendar-table-sticky-top: calc(
+    var(--page-safe-top) + var(--page-topbar-height) + var(--calendar-header-gap)
+  );
 }
 
 html, body {
@@ -37,10 +41,18 @@ html, body {
     height: 100%;
     max-height: 100vh;
     box-sizing: border-box;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+#app::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 #app {
-  padding: 0px 7px 0px 7px;
+  padding: 0px 7px 100px 7px;
   font-size: 12px;
 }
 
@@ -170,33 +182,73 @@ button {
 /* Заголовок */
 
 .calendar-header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 6px;
   flex-direction: row;
   height: var(--page-topbar-height);
-  margin: 0 0 17px;
+  margin: 0 0 var(--calendar-header-gap);
   padding-top: var(--page-safe-top);
   box-sizing: content-box;
+  background: #f9f9f9;
+}
+
+.calendar-header::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: calc(-1 * var(--calendar-header-gap));
+  left: 0;
+  height: var(--calendar-header-gap);
+  background: #f9f9f9;
+  pointer-events: none;
 }
 .calendar-header-left {
-    font-size: 20px;
-    font-weight: 700;
-    padding-left: 9px;
-    color: #2b3c51;
-    line-height: 1.2;
+  min-width: 0;
+  flex: 1 1 auto;
+  padding-left: 9px;
+  color: #2b3c51;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.month-label {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calendar-header-right {
+  flex: 0 0 auto;
+  min-width: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 44px;
+  box-sizing: border-box;
 }
 
 .calendar-header-right button {
-    width: 40px;
-    height: 40px;
-    display: grid;
-    place-items: center;
-    background: none;
-    color: #2b3c51;
-    margin-right: 9px;
-    padding: 0;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  margin-right: 4px;
+  padding: 0;
+  border: 1px solid #d8dee2;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #405569;
+}
+
+.calendar-today-return:active {
+  background: #e9eef1;
 }
 /* Таблица */
 
@@ -371,9 +423,18 @@ th.bg-orange {
   font-weight: 700;
 }
 
+.clients-actions-row {
+    flex: 0 0 38px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    background: #f9f9f9;
+    padding-top: 7px;
+}
+
 .clients-add-button {
-  width: 40px;
-  height: 40px;
+  width: 34px;
+  height: 34px;
   display: grid;
   place-items: center;
   padding: 0;
@@ -412,9 +473,9 @@ th.bg-orange {
 .clients-tabs button::after {
   content: "";
   position: absolute;
-  right: 16px;
+  right: 0px;
   bottom: -1px;
-  left: 16px;
+  left: 0px;
   height: 2px;
   background: transparent;
 }
@@ -430,15 +491,21 @@ th.bg-orange {
 .clients-tab-content {
   flex: 1 1 auto;
   min-height: 0;
-  padding: 10px 0 calc(104px + env(safe-area-inset-bottom, 0px));
+  padding: 10px 0 calc(20px + env(safe-area-inset-bottom, 0px));
   overflow-x: hidden;
   overflow-y: auto;
   box-sizing: border-box;
   overscroll-behavior-y: contain;
   touch-action: pan-y;
   -webkit-overflow-scrolling: touch;
-  scrollbar-width: thin;
-  scrollbar-color: #cbd4d9 transparent;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.clients-tab-content::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .client-list {
@@ -721,7 +788,7 @@ button.copy-btn {
 /* ---------------уведомления внизу ------------- */
 .toast-message {
   position: fixed;
-  bottom: calc(94px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(24px + env(safe-area-inset-bottom, 0px));
   left: 50%;
   transform: translateX(-50%) translateY(20px);
   width: max-content;
@@ -1120,6 +1187,8 @@ p.modal-subtext {
   overflow-y: auto;
   box-sizing: border-box;
   scroll-snap-type: y mandatory;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
   -webkit-mask-image: linear-gradient(
@@ -1150,6 +1219,7 @@ p.modal-subtext {
   place-items: center;
   padding: 0;
   scroll-snap-align: center;
+  scroll-snap-stop: always;
   border-radius: 0;
   background: transparent;
   color: #a8adb1;
@@ -1173,6 +1243,39 @@ p.modal-subtext {
   font-size: 20px;
   font-weight: 500;
   pointer-events: none;
+}
+
+.booking-duration-control {
+  margin-top: 9px;
+  padding-top: 8px;
+  border-top: 1px solid #e0e5e8;
+}
+
+.booking-duration-toggle {
+  min-height: 28px;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  color: #526372;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.booking-duration-toggle > strong {
+  color: #34475a;
+  font-size: 10px;
+  font-weight: 650;
+  text-align: right;
+}
+
+.booking-duration-toggle .monthly-support-checkbox {
+  margin: 0;
+}
+
+.booking-duration-wheel {
+  margin-top: 5px;
 }
 
 .booking-details-modal .modal-actions {
@@ -1299,6 +1402,72 @@ p.modal-subtext {
 
 .package-size-options button:active {
   background: #dce7ec;
+}
+
+.add-booking-modal {
+  width: min(330px, calc(100vw - 28px));
+  box-sizing: border-box;
+  overflow: visible;
+}
+
+.add-entry-tabs {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 10px 0 0;
+  border-bottom: 1px solid #dce2e6;
+}
+
+.add-entry-tabs button {
+  position: relative;
+  height: 36px;
+  padding: 0 6px;
+  border-radius: 0;
+  background: transparent;
+  color: #7a8791;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.add-entry-tabs button::after {
+  content: "";
+  position: absolute;
+  right: 0px;
+  bottom: -1px;
+  left: 0px;
+  height: 2px;
+  background: transparent;
+}
+
+.add-entry-tabs button.active {
+  color: #2b3c51;
+}
+
+.add-entry-tabs button.active::after {
+  background: #66899b;
+}
+
+.add-entry-booking-form {
+  margin-top: 11px;
+}
+
+.add-entry-event-form {
+  margin-top: 10px;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.booking-client-select {
+  z-index: 20;
+}
+
+.booking-client-options {
+  max-height: min(210px, 42vh);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
 }
 
 .package-price-block {
@@ -1907,7 +2076,7 @@ p.modal-subtext {
   display: flex;
   align-items: flex-start;
   width: 100%;
-  overflow: hidden;
+  overflow: visible;
   position: relative;
 }
 
@@ -1915,7 +2084,7 @@ p.modal-subtext {
 .calendar-left {
   flex: 0 0 auto;
   width: 56px; /* примерно ширина двух колонок */
-  z-index: 3;
+  z-index: 20;
   /* background: #fff; */
   /* border-right: 1px solid #d1d5db; */
   position: sticky;
@@ -1960,15 +2129,16 @@ p.modal-subtext {
 /* Правая часть — сам календарь (7 дней) */
 .calendar-right {
   flex: 1 1 auto;
-  overflow: hidden;
+  overflow: clip;
   position: relative;
 }
 
 .calendar-scroll {
-  overflow: hidden;
+  overflow: clip;
   position: relative;
   width: 100%;
   touch-action: pan-y;
+  overscroll-behavior-x: contain;
 }
 
 .calendar-scroll-inner {
@@ -2004,6 +2174,14 @@ p.modal-subtext {
   table-layout: fixed;
 }
 
+.app-calendar .fixed-time-table thead th,
+.app-calendar .calendar-scroll-inner thead th {
+  position: sticky;
+  top: var(--calendar-table-sticky-top);
+  z-index: 30;
+  background-color: #f9f9f9;
+}
+
 .fixed-time-table tbody tr,
 .calendar-scroll-inner tbody tr {
   height: var(--calendar-row-height);
@@ -2019,12 +2197,13 @@ p.modal-subtext {
 
 .fixed-time-table tfoot td,
 .calendar-scroll-inner tfoot td {
-  height: var(--calendar-agenda-row-height);
+  height: var(--agenda-row-height, var(--calendar-agenda-row-height));
   padding: 0;
   box-sizing: border-box;
 }
 
 .calendar-agenda-label {
+  border-left: 0;
   background: #f4f6f7;
   color: #526372;
   font-size: 8px !important;
@@ -2034,7 +2213,8 @@ p.modal-subtext {
 
 .calendar-agenda-label > span {
   width: 100%;
-  height: var(--calendar-agenda-row-height);
+  height: 100%;
+  min-height: var(--agenda-row-height, var(--calendar-agenda-row-height));
   display: grid;
   place-items: center;
   box-sizing: border-box;
@@ -2044,8 +2224,8 @@ p.modal-subtext {
   background: #fbfbfb;
 }
 
-.fixed-time-table tfoot .calendar-event-row td,
-.calendar-scroll-inner tfoot .calendar-event-row td {
+.fixed-time-table tfoot tr:last-child td,
+.calendar-scroll-inner tfoot tr:last-child td {
   border-bottom: 0;
 }
 
@@ -2064,7 +2244,8 @@ p.modal-subtext {
 .calendar-agenda-cell button {
   position: relative;
   width: 100%;
-  height: var(--calendar-agenda-row-height);
+  height: 100%;
+  min-height: var(--agenda-row-height, var(--calendar-agenda-row-height));
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -2074,6 +2255,7 @@ p.modal-subtext {
   padding: 3px 2px;
   border-radius: 0;
   box-sizing: border-box;
+  overflow: hidden;
   background: transparent;
   color: #33485a;
   font-size: 7px;
@@ -2322,7 +2504,6 @@ button.calendar-agenda-detail-copy:active {
   gap: 7px;
   margin-top: 9px;
   padding-top: 9px;
-  border-top: 1px solid #e1e5e7;
 }
 
 .calendar-event-composer label {
@@ -3206,7 +3387,7 @@ button.calendar-agenda-detail-copy:active {
 }
 
 .modal .support-dates-note {
-  margin: 9px 0 0;
+!  margin: 9px 0 0;
   color: #7a6758;
   font-size: 9px;
   line-height: 1.4;
@@ -3214,24 +3395,33 @@ button.calendar-agenda-detail-copy:active {
 
 
 
-/* Плавающая кнопка */
+/* Кнопка переключения страниц в верхней панели */
 .fab-btn{
   position: fixed;
-  margin: 0 auto;
-  width: 59px;
-  bottom: 28px;
-  right: 0;
-  left: 0;
-  height: 59px;
+  top: calc(var(--page-safe-top) + 10px);
+  right: 16px;
+  width: 36px;
+  height: 36px;
+  margin: 0;
+  padding: 0;
   border: 0;
-  border-radius: 50%;
-  background: none;
+  border-radius: 6px;
+  background: transparent;
   color: #3f525f;
   cursor: pointer;
-  z-index: 15;              /* выше нижнего меню */
+  z-index: 60;
   display: grid;
   place-items: center;
   transition: transform .2s ease, box-shadow .2s ease;
+}
+
+#app.app-clients + .fab-btn {
+  right: 16px;
+}
+
+.fab-btn .lottie-icon {
+  width: 32px;
+  height: 32px;
 }
 
 
@@ -3253,6 +3443,21 @@ button.calendar-agenda-detail-copy:active {
   z-index: auto;
 }
 
+.calendar-hour-cell.long-press-front {
+  z-index: 220 !important;
+}
+
+tr.long-press-row-front {
+  position: relative;
+  z-index: 220;
+}
+
+.calendar-hour-cell.long-press-front::after,
+.calendar-hour-cell.long-press-front .calendar-booking-layer,
+.calendar-hour-cell.long-press-front .booking-item {
+  z-index: 221;
+}
+
 .calendar-booking-layer {
   position: absolute;
   inset: 0;
@@ -3267,13 +3472,14 @@ button.calendar-agenda-detail-copy:active {
   left: 0;
   right: 0;
   width: 100%;
-  height: var(--calendar-row-height);
+  height: var(--booking-duration, 100%);
   padding: 1px 2px;
   box-sizing: border-box;
   overflow: hidden;
   pointer-events: auto;
   z-index: 1;
   background: #c7d9e5;
+  border-right: 1px solid #c2c5cb;
   border-bottom: 1px solid #c2c5cb;
   border-radius: 0;
 }
@@ -3288,7 +3494,7 @@ button.calendar-agenda-detail-copy:active {
   left: 0;
   right: 0;
   width: 100%;
-  height: var(--calendar-row-height);
+  height: var(--booking-duration, 100%);
   display: grid;
   place-items: center;
   padding: 2px 3px;
@@ -3296,13 +3502,14 @@ button.calendar-agenda-detail-copy:active {
   overflow: hidden;
   pointer-events: auto;
   z-index: 2;
+  border-right: 1px solid #c2cec6;
   border-bottom: 1px solid #c2cec6;
   background: #dce7e0;
   color: #344a3f;
 }
 
 .calendar-scheduled-event:active {
-  background: #cfddd4;
+  background: #!cfddd4;
 }
 
 .calendar-scheduled-event-title {
@@ -3326,7 +3533,7 @@ button.calendar-agenda-detail-copy:active {
 }
 /* 🌞 исчезает меню при модалке */
 .fab-btn.hide-under-modal {
-  position: static !important;
   opacity: 0 !important;
+  visibility: hidden;
   pointer-events: none !important;
 }

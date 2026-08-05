@@ -89,6 +89,9 @@ let calendarEvents = [];
 const TIME_SETTINGS_STORAGE_KEY = "workcalendar.timeSettings.v1";
 const DAY_MINUTES = 24 * 60;
 const BOOKING_DURATION_MINUTES = 60;
+const DURATION_STEP_MINUTES = 15;
+const MIN_DURATION_MINUTES = 15;
+const MAX_DURATION_MINUTES = 12 * 60 + 45;
 const LEGACY_BOOKING_ZONE_ID = "Asia/Bangkok";
 const BOOKING_REFERENCE_ZONE_ID = "UTC";
 const TIME_ZONE_OFFSET_CACHE = new Map();
@@ -137,6 +140,8 @@ const state = {
   modalDateISO: null,
   modalMinute: 9 * 60,
   modalClient: "",
+  modalClientDropdownOpen: false,
+  modalTab: "booking",
 
   timeSettingsModalOpen: false,
   timeSettingsColumn: "yellow",
@@ -154,6 +159,8 @@ const state = {
   packageMonthly: false,
   packagePrice: "",
   packagePriceEditing: true,
+  packagePriceTargetId: null,
+  packagePricePending: false,
   packageStartISO: currentLocalDateISO(),
   packageCalendarMonthISO: currentMonthStartISO(),
   packageCalendarOpen: false,
@@ -166,6 +173,8 @@ const state = {
   bookingMoveCalendarMonthISO: currentMonthStartISO(),
   bookingMoveCalendarOpen: false,
   bookingMoveTimeOpen: false,
+  bookingEditDurationCustom: false,
+  bookingEditDurationMinutes: BOOKING_DURATION_MINUTES,
 
   // подробности месячного ведения
   supportDetailsOpen: false,
@@ -193,9 +202,12 @@ const state = {
   calendarDayDetailsMode: "all",
   calendarEventComposerOpen: false,
   calendarEventDraft: "",
+  calendarEventDraftDateISO: "",
   calendarEventDraftHasTime: false,
   calendarEventDraftMinute: 9 * 60,
   calendarEventTimeOpen: false,
+  calendarEventDraftDurationCustom: false,
+  calendarEventDraftDurationMinutes: BOOKING_DURATION_MINUTES,
   calendarEventPending: false,
   calendarEventDeleteId: null,
 
@@ -206,6 +218,8 @@ const state = {
   calendarEventEditDateISO: currentLocalDateISO(),
   calendarEventEditHasTime: false,
   calendarEventEditMinute: 9 * 60,
+  calendarEventEditDurationCustom: false,
+  calendarEventEditDurationMinutes: BOOKING_DURATION_MINUTES,
   calendarEventEditCalendarMonthISO: currentMonthStartISO(),
   calendarEventEditCalendarOpen: false,
   calendarEventEditTimeOpen: false,
@@ -224,7 +238,7 @@ confirm: {
   open: false,
   title: "",
   message: "",
-  type: null,       // booking | package | client
+  type: null,       // booking | calendar-event | package | client
   bookingId: null,  // id брони
   itemId: null,     // id пакета/клиента
   deleteMode: "delete-all",
@@ -239,7 +253,7 @@ confirm: {
 let currentPage = "calendar"; // текущая страница: "calendar" или "clients"
 let suppressBookingTapUntil = 0;
 let suppressClientDeleteClickUntil = 0;
-let bookingTimeWheelScrollTimer = null;
+const bookingTimeWheelScrollTimers = new WeakMap();
 
 // ---------- Инициализация ----------
 document.addEventListener("DOMContentLoaded", () => {
@@ -382,90 +396,176 @@ function initGlobalHandlers() {
 
  // ===== Свайп по календарю для смены недели =====
 
+const SWIPE_DIRECTION_THRESHOLD = 10;
+const SWIPE_HORIZONTAL_DOMINANCE = 1.2;
+const SWIPE_ANIMATION_SPEED = 0.38;
+const SWIPE_EASING = "cubic-bezier(0.25, 1, 0.5, 1)";
+
 let swipeX = 0;
-let startX = 0;
-let isDragging = false;
+let swipeStartX = 0;
+let swipeStartY = 0;
+let swipeStartedAt = 0;
+let swipeAxis = null;
+let swipeZone = null;
+let activeSwipePointerId = null;
+let suppressSwipeClickUntil = 0;
 
-document.addEventListener("touchstart", (e) => {
-  const zone = e.target.closest(".calendar-scroll-inner");
-  if (!zone) return;
-  isDragging = true;
-  startX = e.touches[0].clientX;
-  zone.style.transition = "none";
-});
+function resetSwipeTracking() {
+  swipeX = 0;
+  swipeStartX = 0;
+  swipeStartY = 0;
+  swipeStartedAt = 0;
+  swipeAxis = null;
+  swipeZone = null;
+  activeSwipePointerId = null;
+}
 
-document.addEventListener("touchmove", (e) => {
-  if (!isDragging) return;
-  const zone = document.querySelector(".calendar-scroll-inner");
-  swipeX = e.touches[0].clientX - startX;
-  // сохраняем центральную неделю, добавляем подглядывание соседней
-  zone.style.transform = `translateX(calc(-33.333% + ${swipeX}px))`;
-});
+function snapCalendarWeekToCenter(zone) {
+  if (!zone?.isConnected) return;
+  zone.style.transition = `transform ${SWIPE_ANIMATION_SPEED}s ${SWIPE_EASING}`;
+  zone.style.transform = "translateX(-33.333%)";
+}
 
-document.addEventListener("touchend", () => {
-  if (!isDragging) return;
-  isDragging = false;
-  const zone = document.querySelector(".calendar-scroll-inner");
-  if (!zone) return;
+function completeCalendarWeekSwipe(zone, direction) {
+  let completed = false;
+  let fallbackTimer = null;
+  let transitionEndHandler = null;
 
-  const THRESHOLD = 75; // порог в пикселях
-  const ANIM_SPEED = 0.38; // скорость плавного вставания
-  const EASING = "cubic-bezier(0.25, 1, 0.5, 1)"; // мягкий айфоновский easing
+  const finish = () => {
+    if (completed) return;
+    completed = true;
+    clearTimeout(fallbackTimer);
+    zone.removeEventListener("transitionend", transitionEndHandler);
 
-  if (swipeX < -THRESHOLD) {
-    // Свайп влево → следующая неделя
-    zone.style.transition = `transform 0.35s ${EASING}`;
-    zone.style.transform = "translateX(-66.666%)"; // уходит влево
+    state.anchorDate = direction === "next"
+      ? addWeeks(state.anchorDate, 1)
+      : subWeeks(state.anchorDate, 1);
+    render();
 
-    zone.addEventListener("transitionend", function next() {
-      zone.removeEventListener("transitionend", next);
+    const newZone = document.querySelector(".calendar-scroll-inner");
+    if (!newZone) return;
 
+    newZone.style.transition = "none";
+    newZone.style.transform = direction === "next"
+      ? "translateX(0%)"
+      : "translateX(-66.666%)";
 
-      state.anchorDate = addWeeks(state.anchorDate, 1);
-      render();
-
-      const newZone = document.querySelector(".calendar-scroll-inner");
-      if (!newZone) return;
-
-      newZone.style.transition = "none";
-      newZone.style.transform = "translateX(0%)"; // новая неделя справа
-
-      requestAnimationFrame(() => {
-        newZone.style.transition = `transform ${ANIM_SPEED}s ${EASING}`;
-        newZone.style.transform = "translateX(-33.333%)"; // плавно центр
-      });
+    requestAnimationFrame(() => {
+      newZone.style.transition = `transform ${SWIPE_ANIMATION_SPEED}s ${SWIPE_EASING}`;
+      newZone.style.transform = "translateX(-33.333%)";
     });
-  } else if (swipeX > THRESHOLD) {
-    // Свайп вправо → предыдущая неделя
-    zone.style.transition = `transform 0.35s ${EASING}`;
-    zone.style.transform = "translateX(0%)"; // уходит вправо
+  };
 
-    zone.addEventListener("transitionend", function next() {
-      zone.removeEventListener("transitionend", next);
+  transitionEndHandler = (event) => {
+    if (event.target !== zone || event.propertyName !== "transform") return;
+    finish();
+  };
+  zone.addEventListener("transitionend", transitionEndHandler);
+  fallbackTimer = setTimeout(finish, 450);
+}
 
-      state.anchorDate = subWeeks(state.anchorDate, 1);
-      render();
-
-      const newZone = document.querySelector(".calendar-scroll-inner");
-      if (!newZone) return;
-
-      newZone.style.transition = "none";
-      newZone.style.transform = "translateX(-66.666%)"; // новая неделя слева
-
-      requestAnimationFrame(() => {
-        newZone.style.transition = `transform ${ANIM_SPEED}s ${EASING}`;
-        newZone.style.transform = "translateX(-33.333%)"; // плавно центр
-      });
-    });
-  } else {
-    // Недотянул — просто вернуться
-    zone.style.transition = `transform ${ANIM_SPEED}s ${EASING}`;
-    zone.style.transform = "translateX(-33.333%)";
+document.addEventListener("pointerdown", (e) => {
+  if (e.isPrimary === false || (e.pointerType === "mouse" && e.button !== 0)) {
+    return;
   }
 
+  const zone = e.target instanceof Element
+    ? e.target.closest(".calendar-scroll-inner")
+    : null;
+  if (!zone) return;
+
   swipeX = 0;
+  swipeStartX = e.clientX;
+  swipeStartY = e.clientY;
+  swipeStartedAt = performance.now();
+  swipeAxis = "pending";
+  swipeZone = zone;
+  activeSwipePointerId = e.pointerId;
+  zone.style.transition = "none";
+}, { passive: true });
+
+document.addEventListener("pointermove", (e) => {
+  if (e.pointerId !== activeSwipePointerId || !swipeZone?.isConnected) return;
+
+  const deltaX = e.clientX - swipeStartX;
+  const deltaY = e.clientY - swipeStartY;
+  const absX = Math.abs(deltaX);
+  const absY = Math.abs(deltaY);
+
+  if (swipeAxis === "pending") {
+    if (Math.max(absX, absY) < SWIPE_DIRECTION_THRESHOLD) return;
+
+    swipeAxis = absX > absY * SWIPE_HORIZONTAL_DOMINANCE
+      ? "horizontal"
+      : "vertical";
+    clearLongPressGesture();
+
+    if (swipeAxis === "vertical") {
+      snapCalendarWeekToCenter(swipeZone);
+      return;
+    }
+
+    suppressSwipeClickUntil = Date.now() + 600;
+  }
+
+  if (swipeAxis !== "horizontal") return;
+  if (e.cancelable) e.preventDefault();
+
+  const viewportWidth = swipeZone.parentElement?.clientWidth || window.innerWidth;
+  const maxOffset = Math.max(90, viewportWidth * 0.65);
+  swipeX = Math.max(-maxOffset, Math.min(maxOffset, deltaX));
+  swipeZone.style.transform = `translateX(calc(-33.333% + ${swipeX}px))`;
+}, { passive: false });
+
+document.addEventListener("pointerup", (e) => {
+  if (e.pointerId !== activeSwipePointerId) return;
+
+  const zone = swipeZone;
+  const axis = swipeAxis;
+  const releasedX = swipeX;
+  const elapsed = performance.now() - swipeStartedAt;
+  resetSwipeTracking();
+
+  if (!zone?.isConnected || axis !== "horizontal") {
+    snapCalendarWeekToCenter(zone);
+    return;
+  }
+
+  const viewportWidth = zone.parentElement?.clientWidth || window.innerWidth;
+  const distanceThreshold = Math.min(72, Math.max(56, viewportWidth * 0.18));
+  const quickFlick = elapsed <= 260 && Math.abs(releasedX) >= 36;
+  const changedWeek = Math.abs(releasedX) >= distanceThreshold || quickFlick;
+
+  if (!changedWeek) {
+    snapCalendarWeekToCenter(zone);
+    return;
+  }
+
+  const direction = releasedX < 0 ? "next" : "previous";
+  zone.style.transition = `transform 0.35s ${SWIPE_EASING}`;
+  zone.style.transform = direction === "next"
+    ? "translateX(-66.666%)"
+    : "translateX(0%)";
   closeAllTransient();
-});
+  completeCalendarWeekSwipe(zone, direction);
+}, { passive: true });
+
+document.addEventListener("pointercancel", (e) => {
+  if (e.pointerId !== activeSwipePointerId) return;
+  const zone = swipeZone;
+  resetSwipeTracking();
+  snapCalendarWeekToCenter(zone);
+}, { passive: true });
+
+document.addEventListener("click", (e) => {
+  if (Date.now() >= suppressSwipeClickUntil) return;
+  if (!(e.target instanceof Element) || !e.target.closest(".calendar-scroll-inner")) {
+    return;
+  }
+  suppressSwipeClickUntil = 0;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+}, true);
 //----------------------------------------------------
 // ----------------------------------------------------
 // ----------------------------------------------------
@@ -480,156 +580,160 @@ document.addEventListener("touchend", () => {
 
 
 const LONG_PRESS_MS = 500;
-const MOVE_TOLERANCE = 10;
+const LONG_PRESS_PREVIEW_MS = 80;
+const MOVE_TOLERANCE = 16;
 
 let longPressTimer = null;
-let lpStartX = 0, lpStartY = 0;
+let longPressPreviewTimer = null;
+let longPressPreviewHideTimer = null;
+let lpStartX = 0;
+let lpStartY = 0;
 let targetEl = null;
 let isMoving = false;
+let longPressActivated = false;
+let suppressLongPressClickUntil = 0;
+let activeLongPressPointerId = null;
 
-document.addEventListener("touchstart", (e) => {
-  const t = e.touches[0];
-  lpStartX = t.clientX;
-  lpStartY = t.clientY;
+function clearLongPressFront() {
+  document.querySelectorAll(".long-press-front").forEach((element) => {
+    element.classList.remove("long-press-front");
+  });
+  document.querySelectorAll(".long-press-row-front").forEach((element) => {
+    element.classList.remove("long-press-row-front");
+  });
+}
+
+function clearLongPressGesture() {
+  clearTimeout(longPressTimer);
+  clearTimeout(longPressPreviewTimer);
+  clearTimeout(longPressPreviewHideTimer);
+  longPressTimer = null;
+  longPressPreviewTimer = null;
+  longPressPreviewHideTimer = null;
+
+  if (targetEl) {
+    targetEl.classList.remove("pressed", "show-popup", "long-pressing");
+  }
+  clearLongPressFront();
+  targetEl = null;
   isMoving = false;
+  activeLongPressPointerId = null;
+}
 
-  targetEl = e.target.closest(
+function finishLongPressGesture() {
+  if (longPressActivated) {
+    suppressLongPressClickUntil = Date.now() + 500;
+  }
+  longPressActivated = false;
+  clearLongPressGesture();
+}
+
+document.addEventListener("click", (e) => {
+  if (Date.now() >= suppressLongPressClickUntil) return;
+  suppressLongPressClickUntil = 0;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+}, true);
+
+document.addEventListener("pointerdown", (e) => {
+  if (e.isPrimary === false || (e.pointerType === "mouse" && e.button !== 0)) {
+    return;
+  }
+
+  suppressLongPressClickUntil = 0;
+  longPressActivated = false;
+  clearLongPressGesture();
+
+  const nextTarget = e.target instanceof Element
+    ? e.target.closest(
     ".calendar-scheduled-event, .booking-item, .cell-clickable"
-  );
-  if (!targetEl) return;
+      )
+    : null;
+  if (!nextTarget) return;
 
-  // сбрасываем предыдущие состояния
+  targetEl = nextTarget;
+  activeLongPressPointerId = e.pointerId;
+  lpStartX = e.clientX;
+  lpStartY = e.clientY;
+  clearLongPressFront();
+
   targetEl.classList.remove("pressed");
   targetEl.classList.remove("long-pressing");
 
-  // таймер для визуального эффекта "pressed" (если не свайп)
-  // таймер для визуального эффекта "pressed" (если не свайп)
-  const pressedTimer = setTimeout(() => {
-    if (!isMoving) {
-      targetEl.classList.add("pressed");
+  const pressTarget = targetEl;
+  const pressedCell = pressTarget.closest(".cell-clickable");
+  const pressedBooking = pressTarget.closest(".booking-item");
+  const pressedEvent = pressTarget.closest(".calendar-scheduled-event");
+  const pressAction = {
+    eventId: pressedEvent?.dataset.id || "",
+    bookingId: pressedBooking?.dataset.id || "",
+    dateISO: pressedCell?.dataset.date || "",
+    minute: Number(pressedCell?.dataset.minute),
+  };
 
-      // 👇 Добавляем popup-анимацию (всплытие, как на клавиатуре iPhone)
-      targetEl.classList.add("show-popup");
+  longPressPreviewTimer = setTimeout(() => {
+    if (isMoving || targetEl !== pressTarget || !pressTarget.isConnected) return;
 
-      // Убираем popup чуть позже (через 200 мс)
-      setTimeout(() => {
-        targetEl.classList.remove("show-popup");
-      }, 400);
-    }
-  }, 80);
+    pressTarget.classList.add("pressed", "show-popup");
+    pressedCell?.classList.add("long-press-front");
+    pressedCell?.closest("tr")?.classList.add("long-press-row-front");
 
+    longPressPreviewHideTimer = setTimeout(() => {
+      pressTarget.classList.remove("show-popup");
+    }, LONG_PRESS_MS - LONG_PRESS_PREVIEW_MS);
+  }, LONG_PRESS_PREVIEW_MS);
 
-  // основной таймер долгого удержания
-  longPressTimer = setTimeout(async () => {
-    if (isMoving) return; // не реагировать на свайпы
+  longPressTimer = setTimeout(() => {
+    if (isMoving || targetEl !== pressTarget) return;
 
-    targetEl.classList.remove("pressed");
-    targetEl.classList.add("long-pressing");
+    clearTimeout(longPressPreviewTimer);
+    clearTimeout(longPressPreviewHideTimer);
+    longPressTimer = null;
+    longPressPreviewTimer = null;
+    longPressPreviewHideTimer = null;
+    pressTarget.classList.remove("pressed", "show-popup");
+    pressTarget.classList.add("long-pressing");
 
-    try {
-      // 💥 Вибрация при срабатывании
-      if (window.Capacitor?.Plugins?.Haptics) {
-        await window.Capacitor.Plugins.Haptics.impact({ style: 'heavy' });
-      } else if (typeof Haptics !== 'undefined') {
-        await Haptics.impact({ style: 'heavy' });
-      } else if ('vibrate' in navigator) {
-        navigator.vibrate(80);
-      }
-    } catch (err) {
-      console.warn('Haptics long press error:', err);
-    }
+    longPressActivated = true;
 
-    const cell = targetEl.closest(".cell-clickable");
-    const booking = targetEl.closest(".booking-item");
-    const scheduledEvent = targetEl.closest(".calendar-scheduled-event");
-
-    if (scheduledEvent?.dataset.id) {
+    if (pressAction.eventId) {
       suppressBookingTapUntil = Date.now() + 900;
-      openCalendarEventDetails(scheduledEvent.dataset.id);
-    } else if (cell && cell.dataset.date && cell.dataset.minute) {
-      openAddBookingModal(cell.dataset.date, Number(cell.dataset.minute));
+      openConfirmDeleteCalendarEvent(pressAction.eventId);
+    } else if (pressAction.bookingId) {
+      suppressBookingTapUntil = Date.now() + 900;
+      openConfirmDeleteBooking(pressAction.bookingId);
+    } else if (pressAction.dateISO && Number.isFinite(pressAction.minute)) {
+      openAddBookingModal(pressAction.dateISO, pressAction.minute);
     }
 
-    if (booking && booking.dataset.id) {
-      suppressBookingTapUntil = Date.now() + 900;
-      openConfirmDeleteBooking(booking.dataset.id);
-    }
+    void haptic("rigid");
+    targetEl = null;
+    clearLongPressFront();
   }, LONG_PRESS_MS);
+}, { passive: true });
 
-  // обработка движения
-  const handleMove = (eMove) => {
-    const m = eMove.touches[0];
-    const dx = Math.abs(m.clientX - lpStartX);
-    const dy = Math.abs(m.clientY - lpStartY);
-    if (dx > MOVE_TOLERANCE || dy > MOVE_TOLERANCE) {
-      // пользователь двигает палец — значит, это свайп
-      isMoving = true;
-      if (targetEl.closest(".booking-item")) {
-        suppressBookingTapUntil = Date.now() + 500;
-      }
-      clearTimeout(longPressTimer);
-      clearTimeout(pressedTimer);
-      targetEl.classList.remove("pressed", "long-pressing");
+document.addEventListener("pointermove", (e) => {
+  if (!targetEl || e.pointerId !== activeLongPressPointerId) return;
+  const dx = Math.abs(e.clientX - lpStartX);
+  const dy = Math.abs(e.clientY - lpStartY);
+
+  if (dx > MOVE_TOLERANCE || dy > MOVE_TOLERANCE) {
+    isMoving = true;
+    if (targetEl.closest(".booking-item, .calendar-scheduled-event")) {
+      suppressBookingTapUntil = Date.now() + 500;
     }
-  };
-
-  const cancelPress = () => {
-    clearTimeout(longPressTimer);
-    clearTimeout(pressedTimer);
-    document.removeEventListener("touchend", cancelPress);
-    document.removeEventListener("touchmove", handleMove);
-    targetEl.classList.remove("pressed", "long-pressing");
-  };
-
-  document.addEventListener("touchmove", handleMove, { passive: true });
-  document.addEventListener("touchend", cancelPress, { once: true });
-}, { passive: true });
-
-
-
-
-
-
-document.addEventListener("touchmove", (e) => {
-  if (!longPressTimer) return;
-  const t = e.touches[0];
-  const dx = Math.abs(t.clientX - lpStartX);
-  const dy = Math.abs(t.clientY - lpStartY);
-
-  if (dx > MOVE_TOLERANCE || dy > MOVE_TOLERANCE) {
-    clearTimeout(longPressTimer);
-    longPressTimer = null;
-    document.querySelectorAll(".long-pressing").forEach(el => el.classList.remove("long-pressing"));
+    clearLongPressGesture();
   }
 }, { passive: true });
 
-document.addEventListener("touchend", () => {
-  if (longPressTimer) {
-    clearTimeout(longPressTimer);
-    longPressTimer = null;
-  }
-  // 👇 Убираем эффект
-  document.querySelectorAll(".long-pressing").forEach(el => el.classList.remove("long-pressing"));
+document.addEventListener("pointerup", (e) => {
+  if (e.pointerId !== activeLongPressPointerId) return;
+  finishLongPressGesture();
 }, { passive: true });
-
-
-document.addEventListener("touchmove", (e) => {
-  if (!longPressTimer) return;
-  const t = e.touches[0];
-const dx = Math.abs(t.clientX - lpStartX);
-const dy = Math.abs(t.clientY - lpStartY);
-
-  if (dx > MOVE_TOLERANCE || dy > MOVE_TOLERANCE) {
-    clearTimeout(longPressTimer);
-    longPressTimer = null;
-  }
-}, { passive: true });
-
-document.addEventListener("touchend", () => {
-  if (longPressTimer) {
-    clearTimeout(longPressTimer);
-    longPressTimer = null;
-  }
+document.addEventListener("pointercancel", (e) => {
+  if (e.pointerId !== activeLongPressPointerId) return;
+  longPressActivated = false;
+  clearLongPressGesture();
 }, { passive: true });
 
 // 🔒 Запрещаем системное меню (iOS, Android, desktop)
@@ -651,6 +755,8 @@ document.addEventListener("contextmenu", (e) => {
 // ---------- Вспомогательные ----------
 function closeAllTransient() {
   state.modalOpen = false;
+  state.modalClientDropdownOpen = false;
+  state.modalTab = "booking";
   state.packageModalOpen = false;
   state.packageMembers = [];
   state.packageMemberPickerOpen = null;
@@ -658,12 +764,16 @@ function closeAllTransient() {
   state.packageCalendarOpen = false;
   state.packagePrice = "";
   state.packagePriceEditing = true;
+  state.packagePriceTargetId = null;
+  state.packagePricePending = false;
   state.timeSettingsModalOpen = false;
   state.timeDropdownOpen = null;
   state.bookingDetailsOpen = false;
   state.bookingDetailsId = null;
   state.bookingMoveCalendarOpen = false;
   state.bookingMoveTimeOpen = false;
+  state.bookingEditDurationCustom = false;
+  state.bookingEditDurationMinutes = BOOKING_DURATION_MINUTES;
   state.supportDetailsOpen = false;
   state.supportDetailsId = null;
   state.supportDatesEditOpen = false;
@@ -687,8 +797,11 @@ function closeAllTransient() {
   state.calendarDayDetailsMode = "all";
   state.calendarEventComposerOpen = false;
   state.calendarEventDraft = "";
+  state.calendarEventDraftDateISO = "";
   state.calendarEventDraftHasTime = false;
   state.calendarEventTimeOpen = false;
+  state.calendarEventDraftDurationCustom = false;
+  state.calendarEventDraftDurationMinutes = BOOKING_DURATION_MINUTES;
   state.calendarEventPending = false;
   state.calendarEventDeleteId = null;
   state.calendarEventDetailsOpen = false;
@@ -696,6 +809,8 @@ function closeAllTransient() {
   state.calendarEventEditTitle = "";
   state.calendarEventEditCalendarOpen = false;
   state.calendarEventEditTimeOpen = false;
+  state.calendarEventEditDurationCustom = false;
+  state.calendarEventEditDurationMinutes = BOOKING_DURATION_MINUTES;
   state.calendarEventEditPending = false;
   state.selectedBookingId = null;
 
@@ -933,6 +1048,17 @@ function bookingBaseMinute(booking) {
   );
 }
 
+function normalizeDurationMinutes(value, fallback = BOOKING_DURATION_MINUTES) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return fallback;
+  const stepped = Math.round(numeric / DURATION_STEP_MINUTES) * DURATION_STEP_MINUTES;
+  return Math.min(MAX_DURATION_MINUTES, Math.max(MIN_DURATION_MINUTES, stepped));
+}
+
+function bookingDurationMinutes(booking) {
+  return normalizeDurationMinutes(booking?.durationMinutes);
+}
+
 function storedMinute(value) {
   if (value === null || value === undefined || value === "") return null;
   const minute = Number(value);
@@ -964,6 +1090,18 @@ function calendarEventBaseMinute(event) {
 
 function calendarEventHasTime(event) {
   return calendarEventReferenceMinute(event) !== null;
+}
+
+function calendarEventDurationMinutes(event) {
+  return normalizeDurationMinutes(event?.durationMinutes);
+}
+
+function durationText(value) {
+  const duration = normalizeDurationMinutes(value);
+  const hours = Math.floor(duration / 60);
+  const minutes = duration % 60;
+  if (!hours) return `${minutes} мин`;
+  return `${hours} ч${minutes ? ` ${minutes} мин` : ""}`;
 }
 
 function timeRangeInBaseMinutes(setting) {
@@ -1006,20 +1144,26 @@ function visibleTimedCalendarEvents() {
 
 function scheduleMinuteRange() {
   const ranges = [timeSettings.yellow, timeSettings.gray].map(timeRangeInBaseMinutes);
-  const visibleBookingMinutes = visibleCalendarBookings().map(bookingBaseMinute);
-  const visibleEventMinutes = visibleTimedCalendarEvents().map(calendarEventBaseMinute);
+  const visibleBookings = visibleCalendarBookings();
+  const visibleEvents = visibleTimedCalendarEvents();
+  const visibleBookingMinutes = visibleBookings.map(bookingBaseMinute);
+  const visibleEventMinutes = visibleEvents.map(calendarEventBaseMinute);
   const minStartMinute = Math.min(
     ...ranges.map((range) => range.startMinute),
     ...visibleBookingMinutes,
     ...visibleEventMinutes
   );
-  const lastSlotStartMinute = Math.max(
-    ...ranges.map((range) => range.endMinute),
-    ...visibleBookingMinutes,
-    ...visibleEventMinutes
+  const lastSlotEndMinute = Math.max(
+    ...ranges.map((range) => range.endMinute + BOOKING_DURATION_MINUTES),
+    ...visibleBookings.map(
+      (booking) => bookingBaseMinute(booking) + bookingDurationMinutes(booking)
+    ),
+    ...visibleEvents.map(
+      (event) => calendarEventBaseMinute(event) + calendarEventDurationMinutes(event)
+    )
   );
   const startMinute = Math.floor(minStartMinute / 60) * 60;
-  const endMinute = Math.max(startMinute + 60, lastSlotStartMinute + BOOKING_DURATION_MINUTES);
+  const endMinute = Math.max(startMinute + 60, lastSlotEndMinute);
 
   return { startMinute, endMinute };
 }
@@ -1241,15 +1385,51 @@ function latestPricedPackage(clientName, size, monthlySupport = false) {
     .sort((a, b) => packageAgendaOrder(b) - packageAgendaOrder(a))[0] || null;
 }
 
-function applySuggestedPackagePrice() {
-  const suggestion = latestPricedPackage(
-    state.packageClient,
-    state.packageSize,
-    state.packageMonthly
+function personalPackagesForClient(clientName) {
+  const cleanName = String(clientName || "").trim();
+  if (!cleanName) return [];
+
+  return packages.filter(
+    (pkg) =>
+      !pkg.monthlySupport &&
+      !pkg.placeholder &&
+      (pkg.clientName === cleanName ||
+        (Array.isArray(pkg.clientNames) && pkg.clientNames.includes(cleanName)))
   );
+}
+
+function latestPersonalPackage(clientName) {
+  return personalPackagesForClient(clientName)
+    .sort((a, b) => packageAgendaOrder(b) - packageAgendaOrder(a))[0] || null;
+}
+
+function activePersonalPackage(clientName, size) {
+  return personalPackagesForClient(clientName)
+    .filter(
+      (pkg) =>
+        Number(pkg.size) === Number(size) &&
+        Number(pkg.used || 0) < Number(pkg.size)
+    )
+    .sort((a, b) => packageAgendaOrder(b) - packageAgendaOrder(a))[0] || null;
+}
+
+function applySuggestedPackagePrice() {
+  const activePackage = state.packageMonthly
+    ? null
+    : activePersonalPackage(state.packageClient, state.packageSize);
+  const suggestion = packagePriceAmount(activePackage) !== null
+    ? activePackage
+    : latestPricedPackage(
+        state.packageClient,
+        state.packageSize,
+        state.packageMonthly
+      );
   const amount = packagePriceAmount(suggestion);
+  state.packagePriceTargetId = activePackage?.id || null;
   state.packagePrice = amount === null ? "" : priceInputText(amount);
-  state.packagePriceEditing = amount === null;
+  state.packagePriceEditing =
+    amount === null ||
+    Boolean(activePackage && packagePriceAmount(activePackage) === null);
 }
 
 function currentLocalDateISO() {
@@ -1614,7 +1794,7 @@ function calendarAgendaByDate() {
       utcMinute: event.utcMinute,
       minuteOfDay: event.minuteOfDay,
       timeZoneId: event.timeZoneId,
-      durationMinutes: Number(event.durationMinutes) || BOOKING_DURATION_MINUTES
+      durationMinutes: calendarEventDurationMinutes(event)
     });
   });
 
@@ -1680,7 +1860,7 @@ function agendaItemMeta(item) {
   const minute = calendarEventBaseMinute(item);
   return minute === null
     ? "Без времени"
-    : `Время: ${bookingTimeZoneSummary(minute)}`;
+    : `Время: ${bookingTimeZoneSummary(minute)} · ${durationText(item.durationMinutes)}`;
 }
 
 function agendaItemKindLabel(item) {
@@ -1706,10 +1886,17 @@ function weekHasAgendaItems(baseDate, agendaByDate) {
   );
 }
 
+function agendaRowHeight(baseDate, agendaByDate) {
+  const maxLabels = weekDays(baseDate).reduce((max, day) => {
+    const items = agendaByDate.get(format(day, "yyyy-MM-dd")) || [];
+    const labels = new Set(items.map(agendaShortText).filter(Boolean));
+    return Math.max(max, labels.size);
+  }, 0);
+  return 25 + Math.max(0, maxLabels - 1) * 10;
+}
+
 function renderAgendaCell(dateISO, items, mode) {
   const labels = [...new Set(items.map(agendaShortText).filter(Boolean))];
-  const visible = labels.slice(0, 2);
-  const extraCount = Math.max(0, labels.length - visible.length);
   const isToday = dateISO === currentLocalDateISO();
   const summary = items.length
     ? items.map((item) => agendaItemTitle(item)).join(". ")
@@ -1722,8 +1909,7 @@ function renderAgendaCell(dateISO, items, mode) {
               data-date="${dateISO}"
               data-mode="${mode}"
               aria-label="${escapeHtml(`${agendaDateLabel(dateISO)}. ${summary}`)}">
-        ${visible.map((label) => `<span>${escapeHtml(label)}</span>`).join("")}
-        ${extraCount ? `<b>+${extraCount}</b>` : ""}
+        ${labels.map((label) => `<span>${escapeHtml(label)}</span>`).join("")}
       </button>
     </td>`;
 }
@@ -1794,6 +1980,13 @@ function render() {
     ) {
       requestAnimationFrame(positionCalendarEventTimeWheels);
     }
+    if (
+      state.bookingEditDurationCustom ||
+      state.calendarEventDraftDurationCustom ||
+      state.calendarEventEditDurationCustom
+    ) {
+      requestAnimationFrame(positionDurationWheels);
+    }
 
 }
 // --------------------- защита модалки
@@ -1824,6 +2017,12 @@ function updateFabVisibility() {
   const fab = document.getElementById("fab-toggle");
   if (!fab) return;
 
+  const label = currentPage === "calendar"
+    ? "Открыть клиентов"
+    : "Вернуться к календарю";
+  fab.setAttribute("aria-label", label);
+  fab.setAttribute("title", label);
+
   if (
     state.modalOpen ||
     state.packageModalOpen ||
@@ -1844,6 +2043,9 @@ function updateFabVisibility() {
 function renderHeader() {
   const start = startOfWeekFor(state.anchorDate);
   const end = addDays(start, 6);
+  const currentWeekStart = startOfWeekFor(new Date());
+  const weekOffset = start.getTime() - currentWeekStart.getTime();
+  const returnDirection = weekOffset > 0 ? "back" : weekOffset < 0 ? "forward" : null;
 
   // Проверяем, один ли месяц в этой неделе
   const startMonth = start.toLocaleString("ru-RU", { month: "long" });
@@ -1864,12 +2066,28 @@ function renderHeader() {
         <span class="month-label">${monthLabel}</span>
       </div>
       <div class="calendar-header-right">
-
-        <button data-action="today">  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                        <circle cx="12" cy="12" r="3"></circle>
-                                        <path d="M12 2v2m0 16v2m10-10h-2M4 12H2"></path>
-                                      </svg></button>
-
+        ${returnDirection
+          ? `<button type="button"
+                     class="calendar-today-return ${returnDirection}"
+                     data-action="today"
+                     aria-label="Вернуться к текущей неделе"
+                     title="Вернуться к текущей неделе">
+               <svg xmlns="http://www.w3.org/2000/svg"
+                    width="17"
+                    height="17"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true">
+                 ${returnDirection === "back"
+                   ? '<path d="m15 18-6-6 6-6"></path>'
+                   : '<path d="m9 18 6-6-6-6"></path>'}
+               </svg>
+             </button>`
+          : ""}
       </div>
     </header>
   `;
@@ -1888,7 +2106,10 @@ function renderWeek(
   paymentAgendaByDate,
   eventAgendaByDate,
   hourMinutes,
-  showPaymentRow
+  showPaymentRow,
+  showEventRow,
+  paymentRowHeight,
+  eventRowHeight
 ) {
   const base = addWeeks(state.anchorDate, offset);
   const week = weekDays(base);
@@ -1966,6 +2187,7 @@ function renderWeek(
         html += `<div class="calendar-booking-layer">`;
         items.forEach((booking) => {
           const bookingMinute = bookingBaseMinute(booking);
+          const durationPercent = (bookingDurationMinutes(booking) / 60) * 100;
           const minuteOffset = bookingMinute - hourMinute;
           const offsetPercent = (minuteOffset / 60) * 100;
           const isToday = booking.dateISO === format(new Date(), "yyyy-MM-dd");
@@ -1975,7 +2197,7 @@ function renderWeek(
 
           html += `
             <div class="booking-item calendar-booking-item ${isToday ? "booking-today" : ""}"
-                 style="--booking-offset:${offsetPercent}%"
+                 style="--booking-offset:${offsetPercent}%;--booking-duration:${durationPercent}%"
                  data-action="open-booking-details"
                  data-id="${escapeHtml(booking.id)}">
               ${preciseTime ? `<div class="booking-start-time">${preciseTime}</div>` : ""}
@@ -1985,6 +2207,7 @@ function renderWeek(
         });
         timedEvents.forEach((event) => {
           const eventMinute = calendarEventBaseMinute(event);
+          const durationPercent = (calendarEventDurationMinutes(event) / 60) * 100;
           const minuteOffset = eventMinute - hourMinute;
           const offsetPercent = (minuteOffset / 60) * 100;
           const preciseTime = minuteOffset
@@ -1993,7 +2216,7 @@ function renderWeek(
 
           html += `
             <div class="calendar-scheduled-event"
-                 style="--booking-offset:${offsetPercent}%"
+                 style="--booking-offset:${offsetPercent}%;--booking-duration:${durationPercent}%"
                  data-action="open-calendar-event-details"
                  data-id="${escapeHtml(event.id)}">
               ${preciseTime ? `<div class="booking-start-time">${preciseTime}</div>` : ""}
@@ -2011,7 +2234,7 @@ function renderWeek(
 
   html += `</tbody><tfoot>`;
   if (showPaymentRow) {
-    html += `<tr class="calendar-payment-row">`;
+    html += `<tr class="calendar-payment-row" style="--agenda-row-height:${paymentRowHeight}px">`;
     week.forEach((day) => {
       const dateISO = format(day, "yyyy-MM-dd");
       html += renderAgendaCell(
@@ -2023,16 +2246,19 @@ function renderWeek(
     html += `</tr>`;
   }
 
-  html += `<tr class="calendar-event-row">`;
-  week.forEach((day) => {
-    const dateISO = format(day, "yyyy-MM-dd");
-    html += renderAgendaCell(
-      dateISO,
-      eventAgendaByDate.get(dateISO) || [],
-      "events"
-    );
-  });
-  html += `</tr></tfoot></table>`;
+  if (showEventRow) {
+    html += `<tr class="calendar-event-row" style="--agenda-row-height:${eventRowHeight}px">`;
+    week.forEach((day) => {
+      const dateISO = format(day, "yyyy-MM-dd");
+      html += renderAgendaCell(
+        dateISO,
+        eventAgendaByDate.get(dateISO) || [],
+        "events"
+      );
+    });
+    html += `</tr>`;
+  }
+  html += `</tfoot></table>`;
   return html;
 }
 
@@ -2040,17 +2266,26 @@ function renderWeek(
 // ---------- Основная таблица календаря ----------
 function renderTable(paymentAgendaByDate, eventAgendaByDate, hourMinutes) {
   const showPaymentRow = weekHasAgendaItems(state.anchorDate, paymentAgendaByDate);
+  const showEventRow = weekHasAgendaItems(state.anchorDate, eventAgendaByDate);
+  const paymentRowHeight = agendaRowHeight(state.anchorDate, paymentAgendaByDate);
+  const eventRowHeight = agendaRowHeight(state.anchorDate, eventAgendaByDate);
   return `
     <div class="calendar-container">
       <div class="calendar-left">
-        ${renderFixedTimes(hourMinutes, showPaymentRow)}
+        ${renderFixedTimes(
+          hourMinutes,
+          showPaymentRow,
+          showEventRow,
+          paymentRowHeight,
+          eventRowHeight
+        )}
       </div>
       <div class="calendar-right">
         <div class="calendar-scroll">
           <div class="calendar-scroll-inner">
-            <div class="calendar-week">${renderWeek(-1, paymentAgendaByDate, eventAgendaByDate, hourMinutes, showPaymentRow)}</div>
-            <div class="calendar-week">${renderWeek(0, paymentAgendaByDate, eventAgendaByDate, hourMinutes, showPaymentRow)}</div>
-            <div class="calendar-week">${renderWeek(1, paymentAgendaByDate, eventAgendaByDate, hourMinutes, showPaymentRow)}</div>
+            <div class="calendar-week">${renderWeek(-1, paymentAgendaByDate, eventAgendaByDate, hourMinutes, showPaymentRow, showEventRow, paymentRowHeight, eventRowHeight)}</div>
+            <div class="calendar-week">${renderWeek(0, paymentAgendaByDate, eventAgendaByDate, hourMinutes, showPaymentRow, showEventRow, paymentRowHeight, eventRowHeight)}</div>
+            <div class="calendar-week">${renderWeek(1, paymentAgendaByDate, eventAgendaByDate, hourMinutes, showPaymentRow, showEventRow, paymentRowHeight, eventRowHeight)}</div>
           </div>
         </div>
       </div>
@@ -2058,7 +2293,13 @@ function renderTable(paymentAgendaByDate, eventAgendaByDate, hourMinutes) {
   `;
 }
 
-function renderFixedTimes(hourMinutes, showPaymentRow) {
+function renderFixedTimes(
+  hourMinutes,
+  showPaymentRow,
+  showEventRow,
+  paymentRowHeight,
+  eventRowHeight
+) {
   const columns = visibleTimeColumns();
   const totalColspan = columns.reduce((sum, column) => sum + column.colspan, 0);
   let html = `<table class="fixed-time-table"><thead><tr>`;
@@ -2093,17 +2334,19 @@ function renderFixedTimes(hourMinutes, showPaymentRow) {
     </tbody>
     <tfoot>
       ${showPaymentRow
-        ? `<tr class="calendar-payment-row">
+        ? `<tr class="calendar-payment-row" style="--agenda-row-height:${paymentRowHeight}px">
              <td class="calendar-agenda-label" colspan="${totalColspan}">
                <span>Оплата</span>
              </td>
            </tr>`
         : ""}
-      <tr class="calendar-event-row">
-        <td class="calendar-agenda-label" colspan="${totalColspan}">
-          <span>Событие</span>
-        </td>
-      </tr>
+      ${showEventRow
+        ? `<tr class="calendar-event-row" style="--agenda-row-height:${eventRowHeight}px">
+             <td class="calendar-agenda-label" colspan="${totalColspan}">
+               <span>Событие</span>
+             </td>
+           </tr>`
+        : ""}
     </tfoot>
   </table>`;
   return html;
@@ -2177,9 +2420,12 @@ function renderTodayAgenda(agendaByDate) {
 function resetCalendarEventComposer() {
   state.calendarEventComposerOpen = false;
   state.calendarEventDraft = "";
+  state.calendarEventDraftDateISO = "";
   state.calendarEventDraftHasTime = false;
   state.calendarEventDraftMinute = scheduleHourMinutes()[0] ?? 9 * 60;
   state.calendarEventTimeOpen = false;
+  state.calendarEventDraftDurationCustom = false;
+  state.calendarEventDraftDurationMinutes = BOOKING_DURATION_MINUTES;
 }
 
 function openCalendarDayDetails(dateISO, mode = "all") {
@@ -2209,9 +2455,12 @@ function openCalendarEventComposer() {
   if (state.calendarEventPending) return;
   state.calendarEventComposerOpen = true;
   state.calendarEventDraft = "";
+  state.calendarEventDraftDateISO = state.calendarDayDetailsISO;
   state.calendarEventDraftHasTime = false;
   state.calendarEventDraftMinute = scheduleHourMinutes()[0] ?? 9 * 60;
   state.calendarEventTimeOpen = false;
+  state.calendarEventDraftDurationCustom = false;
+  state.calendarEventDraftDurationMinutes = BOOKING_DURATION_MINUTES;
   render();
   requestAnimationFrame(() => {
     document.querySelector("[data-bind='calendarEventDraft']")?.focus();
@@ -2239,20 +2488,29 @@ function removeCalendarEventCreateTime() {
   if (state.calendarEventPending) return;
   state.calendarEventDraftHasTime = false;
   state.calendarEventTimeOpen = false;
+  state.calendarEventDraftDurationCustom = false;
+  state.calendarEventDraftDurationMinutes = BOOKING_DURATION_MINUTES;
   render();
 }
 
 function calendarScheduleSlotIsBusy(
   dateISO,
   startMinute,
+  durationMinutes = BOOKING_DURATION_MINUTES,
   excludeBookingId = null,
   excludeEventId = null
 ) {
+  const checkedDuration = normalizeDurationMinutes(durationMinutes);
   const bookingBusy = bookings.some(
     (booking) =>
       booking.id !== excludeBookingId &&
       booking.dateISO === dateISO &&
-      bookingIntervalsOverlap(startMinute, bookingBaseMinute(booking))
+      bookingIntervalsOverlap(
+        startMinute,
+        checkedDuration,
+        bookingBaseMinute(booking),
+        bookingDurationMinutes(booking)
+      )
   );
   if (bookingBusy) return true;
 
@@ -2262,13 +2520,19 @@ function calendarScheduleSlotIsBusy(
       event.dateISO !== dateISO ||
       !calendarEventHasTime(event)
     ) return false;
-    return bookingIntervalsOverlap(startMinute, calendarEventBaseMinute(event));
+    return bookingIntervalsOverlap(
+      startMinute,
+      checkedDuration,
+      calendarEventBaseMinute(event),
+      calendarEventDurationMinutes(event)
+    );
   });
 }
 
 async function saveCalendarEvent() {
   if (state.calendarEventPending) return;
-  const dateISO = state.calendarDayDetailsISO;
+  const createdFromAddEntryModal = state.modalOpen && state.modalTab === "event";
+  const dateISO = state.calendarEventDraftDateISO || state.calendarDayDetailsISO;
   const title = state.calendarEventDraft.trim();
   if (!isValidDateISO(dateISO)) {
     showToast("Дата события не найдена.", "error");
@@ -2283,9 +2547,14 @@ async function saveCalendarEvent() {
     return;
   }
   const eventMinute = Number(state.calendarEventDraftMinute);
+  const eventDuration = normalizeDurationMinutes(
+    state.calendarEventDraftDurationCustom
+      ? state.calendarEventDraftDurationMinutes
+      : BOOKING_DURATION_MINUTES
+  );
   if (
     state.calendarEventDraftHasTime &&
-    calendarScheduleSlotIsBusy(dateISO, eventMinute)
+    calendarScheduleSlotIsBusy(dateISO, eventMinute, eventDuration)
   ) {
     showToast("На это время уже есть запись или событие.", "error");
     return;
@@ -2297,7 +2566,7 @@ async function saveCalendarEvent() {
     const timedFields = state.calendarEventDraftHasTime
       ? {
           minuteOfDay: eventMinute,
-          durationMinutes: BOOKING_DURATION_MINUTES,
+          durationMinutes: eventDuration,
           utcMinute: zoneToZoneMinute(
             eventMinute,
             timeSettings.yellow.zoneId,
@@ -2314,6 +2583,11 @@ async function saveCalendarEvent() {
       ...timedFields
     });
     resetCalendarEventComposer();
+    if (createdFromAddEntryModal) {
+      state.modalOpen = false;
+      state.modalClientDropdownOpen = false;
+      state.modalTab = "booking";
+    }
     showToast("Событие добавлено.", "success");
   } catch (err) {
     console.error("Ошибка добавления события:", err);
@@ -2325,11 +2599,11 @@ async function saveCalendarEvent() {
 }
 
 async function deleteCalendarEvent(eventId) {
-  if (state.calendarEventPending) return;
+  if (state.calendarEventPending) return false;
   const event = calendarEvents.find((item) => item.id === eventId);
   if (!event) {
     showToast("Событие уже удалено.", "error");
-    return;
+    return true;
   }
 
   state.calendarEventPending = true;
@@ -2337,10 +2611,18 @@ async function deleteCalendarEvent(eventId) {
   render();
   try {
     await deleteDoc(doc(db, "calendarEvents", eventId));
+    if (state.calendarEventDetailsId === eventId) {
+      state.calendarEventDetailsOpen = false;
+      state.calendarEventDetailsId = null;
+      state.calendarEventEditCalendarOpen = false;
+      state.calendarEventEditTimeOpen = false;
+    }
     showToast("Событие удалено.", "success");
+    return true;
   } catch (err) {
     console.error("Ошибка удаления события:", err);
     showToast("Не удалось удалить событие.", "error");
+    return false;
   } finally {
     state.calendarEventPending = false;
     state.calendarEventDeleteId = null;
@@ -2417,6 +2699,14 @@ function renderCalendarDayDetailsModal() {
                ${state.calendarEventDraftHasTime && state.calendarEventTimeOpen
                  ? renderCalendarEventTimeWheel("create", state.calendarEventDraftMinute)
                  : ""}
+               ${state.calendarEventDraftHasTime
+                 ? renderDurationControl(
+                     "create",
+                     state.calendarEventDraftDurationCustom,
+                     state.calendarEventDraftDurationMinutes,
+                     state.calendarEventPending
+                   )
+                 : ""}
                <div class="calendar-event-composer-actions">
                  <button type="button"
                          class="btn-gray"
@@ -2471,6 +2761,9 @@ function openCalendarEventDetails(eventId) {
   state.calendarEventEditDateISO = event.dateISO;
   state.calendarEventEditHasTime = minute !== null;
   state.calendarEventEditMinute = minute ?? (scheduleHourMinutes()[0] ?? 9 * 60);
+  state.calendarEventEditDurationMinutes = calendarEventDurationMinutes(event);
+  state.calendarEventEditDurationCustom =
+    state.calendarEventEditDurationMinutes !== BOOKING_DURATION_MINUTES;
   state.calendarEventEditCalendarMonthISO = monthStartISOFor(event.dateISO);
   state.calendarEventEditCalendarOpen = false;
   state.calendarEventEditTimeOpen = false;
@@ -2485,6 +2778,8 @@ function closeCalendarEventDetails() {
   state.calendarEventEditTitle = "";
   state.calendarEventEditCalendarOpen = false;
   state.calendarEventEditTimeOpen = false;
+  state.calendarEventEditDurationCustom = false;
+  state.calendarEventEditDurationMinutes = BOOKING_DURATION_MINUTES;
   render();
 }
 
@@ -2526,6 +2821,8 @@ function toggleCalendarEventEditTime() {
 function removeCalendarEventEditTime() {
   state.calendarEventEditHasTime = false;
   state.calendarEventEditTimeOpen = false;
+  state.calendarEventEditDurationCustom = false;
+  state.calendarEventEditDurationMinutes = BOOKING_DURATION_MINUTES;
   render();
 }
 
@@ -2656,6 +2953,14 @@ function renderCalendarEventDetailsModal() {
           ${state.calendarEventEditHasTime && state.calendarEventEditTimeOpen
             ? renderCalendarEventTimeWheel("edit", editedMinute)
             : ""}
+          ${state.calendarEventEditHasTime
+            ? renderDurationControl(
+                "edit",
+                state.calendarEventEditDurationCustom,
+                state.calendarEventEditDurationMinutes,
+                state.calendarEventEditPending
+              )
+            : ""}
         </div>
 
         <div class="modal-actions">
@@ -2686,6 +2991,11 @@ async function saveCalendarEventDetails() {
   const title = state.calendarEventEditTitle.trim();
   const dateISO = state.calendarEventEditDateISO;
   const minute = Number(state.calendarEventEditMinute);
+  const durationMinutes = normalizeDurationMinutes(
+    state.calendarEventEditDurationCustom
+      ? state.calendarEventEditDurationMinutes
+      : BOOKING_DURATION_MINUTES
+  );
   if (!title) {
     showToast("Напишите название события.", "error");
     return;
@@ -2696,7 +3006,7 @@ async function saveCalendarEventDetails() {
   }
   if (
     state.calendarEventEditHasTime &&
-    calendarScheduleSlotIsBusy(dateISO, minute, null, event.id)
+    calendarScheduleSlotIsBusy(dateISO, minute, durationMinutes, null, event.id)
   ) {
     showToast("На это время уже есть запись или событие.", "error");
     return;
@@ -2705,7 +3015,7 @@ async function saveCalendarEventDetails() {
   const timeFields = state.calendarEventEditHasTime
     ? {
         minuteOfDay: minute,
-        durationMinutes: BOOKING_DURATION_MINUTES,
+        durationMinutes,
         utcMinute: zoneToZoneMinute(
           minute,
           timeSettings.yellow.zoneId,
@@ -2896,6 +3206,8 @@ function renderClientsPanel() {
     <div class="client-panel">
       <div class="clients-topbar">
         <h2>Клиенты</h2>
+      </div>
+      <div class="clients-actions-row">
         <button class="clients-add-button"
                 data-action="open-package-modal-main"
                 aria-label="Добавить клиента"
@@ -2908,9 +3220,10 @@ function renderClientsPanel() {
             <path fill="none"
                   stroke="currentColor"
                   stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="1.8"
-                  d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2m7-10a4 4 0 1 0 0-8a4 4 0 0 0 0 8m10-3v6m3-3h-6"></path>
+                   stroke-linejoin="round"
+                   stroke-width="1.8"
+                   d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2m7-10a4 4 0 1 0 0-8a4 4 0 0 0 0 8m10-3v6m3-3h-6"></path>
+          </svg>
         </button>
       </div>
       <div class="clients-tabs" role="tablist" aria-label="Раздел клиентов">
@@ -2965,7 +3278,9 @@ function renderClientsPanel() {
             (Array.isArray(p.clientNames) && p.clientNames.includes(name)))
       );
 
-      const activePkg = pkgList.find((p) => (p.used || 0) < p.size);
+      const activePkg = pkgList
+        .filter((p) => Number(p.used || 0) < Number(p.size))
+        .sort((a, b) => packageAgendaOrder(b) - packageAgendaOrder(a))[0] || null;
       const isSecondaryInShared = Boolean(group && group.main !== name);
       const expanded = !!state.expandedClients[name];
       const progress = activePkg ? ((activePkg.used || 0) / activePkg.size) * 100 : 0;
@@ -4063,7 +4378,44 @@ function openAddBookingModal(dateISO, minute) {
   state.modalDateISO = dateISO;
   state.modalMinute = minute;
   state.modalClient = activeClients()[0] || "";
+  state.modalClientDropdownOpen = false;
+  state.modalTab = "booking";
+  state.calendarEventComposerOpen = false;
+  state.calendarEventDraft = "";
+  state.calendarEventDraftDateISO = dateISO;
+  state.calendarEventDraftHasTime = true;
+  state.calendarEventDraftMinute = minute;
+  state.calendarEventTimeOpen = false;
+  state.calendarEventDraftDurationCustom = false;
+  state.calendarEventDraftDurationMinutes = BOOKING_DURATION_MINUTES;
+  state.calendarEventPending = false;
   state.selectedBookingId = null;
+  render();
+}
+
+function setAddEntryTab(tab) {
+  if (state.calendarEventPending) return;
+  state.modalTab = tab === "event" ? "event" : "booking";
+  state.modalClientDropdownOpen = false;
+  state.calendarEventTimeOpen = false;
+  if (state.modalTab === "event") {
+    state.calendarEventDraftDateISO = state.modalDateISO || "";
+  }
+  render();
+
+  if (state.modalTab === "event") {
+    requestAnimationFrame(() => {
+      document.querySelector("#add-entry-event-title")?.focus();
+    });
+  }
+}
+
+function closeAddEntryModal() {
+  if (state.calendarEventPending) return;
+  state.modalOpen = false;
+  state.modalClientDropdownOpen = false;
+  state.modalTab = "booking";
+  resetCalendarEventComposer();
   render();
 }
 
@@ -4076,32 +4428,134 @@ function renderAddBookingModal() {
   const timeText = columns
     .map((column) => formatColumnTime(startMinute, column.settings))
     .join(" / ");
+  const clients = activeClients();
+  const isEventTab = state.modalTab === "event";
 
   return `
     <div class="modal-overlay" data-action="overlay-click">
-      <div class="modal">
+      <div class="modal add-booking-modal ${isEventTab ? "event-tab" : "booking-tab"}">
         <h3>Добавить запись</h3>
-        <p>${escapeHtml(d)} — ${timeText}</p>
-        <select data-bind="modalClient">
-          <option value="">Выберите клиента</option>
-          ${activeClients()
-            .map(
-              (c) => `
-              <option value="${escapeHtml(c)}" ${
-                c === state.modalClient ? "selected" : ""
-              }>
-                ${escapeHtml(c)}
-              </option>`
-            )
-            .join("")}
-        </select>
-        <div class="modal-actions">
-          <button class="btn-blue" data-action="save-booking">Сохранить</button>
-          <button class="btn-gray" data-action="close-add-booking">Отмена</button>
+        <p>${escapeHtml(d)}${isEventTab ? "" : ` — ${timeText}`}</p>
+
+        <div class="add-entry-tabs" role="tablist" aria-label="Тип записи">
+          <button type="button"
+                  class="${isEventTab ? "" : "active"}"
+                  data-action="set-add-entry-tab"
+                  data-tab="booking"
+                  role="tab"
+                  aria-selected="${!isEventTab}">
+            Тренировка
+          </button>
+          <button type="button"
+                  class="${isEventTab ? "active" : ""}"
+                  data-action="set-add-entry-tab"
+                  data-tab="event"
+                  role="tab"
+                  aria-selected="${isEventTab}">
+            Событие
+          </button>
         </div>
+
+        ${isEventTab
+          ? `<div class="calendar-event-composer add-entry-event-form">
+               <label for="add-entry-event-title">Новое событие</label>
+               <input id="add-entry-event-title"
+                      type="text"
+                      maxlength="100"
+                      autocomplete="off"
+                      placeholder="Например, поездка к врачу"
+                      value="${escapeHtml(state.calendarEventDraft)}"
+                      data-bind="calendarEventDraft"
+                      ${state.calendarEventPending ? "disabled" : ""}>
+               <div class="calendar-event-time-controls">
+                 <button type="button"
+                         class="calendar-event-time-field ${state.calendarEventDraftHasTime ? "has-time" : ""} ${state.calendarEventTimeOpen ? "open" : ""}"
+                         data-action="toggle-calendar-event-create-time"
+                         aria-expanded="${state.calendarEventTimeOpen}"
+                         ${state.calendarEventPending ? "disabled" : ""}>
+                   <span>${state.calendarEventDraftHasTime ? clockText(state.calendarEventDraftMinute) : "Указать время"}</span>
+                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+                     <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 8v4l2.5 1.5M21 12a9 9 0 1 1-9-9 9 9 0 0 1 9 9Z"></path>
+                   </svg>
+                 </button>
+                 ${state.calendarEventDraftHasTime
+                   ? `<button type="button"
+                              class="calendar-event-time-remove"
+                              data-action="remove-calendar-event-create-time"
+                              aria-label="Убрать время"
+                              title="Убрать время">×</button>`
+                   : ""}
+               </div>
+               ${state.calendarEventDraftHasTime && state.calendarEventTimeOpen
+                 ? renderCalendarEventTimeWheel("create", state.calendarEventDraftMinute)
+                 : ""}
+               ${state.calendarEventDraftHasTime
+                 ? renderDurationControl(
+                     "create",
+                     state.calendarEventDraftDurationCustom,
+                     state.calendarEventDraftDurationMinutes,
+                     state.calendarEventPending
+                   )
+                 : ""}
+               <div class="calendar-event-composer-actions">
+                 <button type="button"
+                         class="btn-gray"
+                         data-action="close-add-booking"
+                         ${state.calendarEventPending ? "disabled" : ""}>
+                   Отмена
+                 </button>
+                 <button type="button"
+                         class="btn-blue"
+                         data-action="save-calendar-event"
+                         ${state.calendarEventPending ? "disabled" : ""}>
+                   ${state.calendarEventPending ? "Сохраняем..." : "Добавить"}
+                 </button>
+               </div>
+             </div>`
+          : `<div class="add-entry-booking-form">
+               <div class="package-size-select booking-client-select">
+                 <button type="button"
+                         class="package-size-field booking-client-field ${state.modalClientDropdownOpen ? "open" : ""}"
+                         data-action="toggle-booking-client-dropdown"
+                         aria-haspopup="listbox"
+                         aria-expanded="${state.modalClientDropdownOpen}"
+                         ${clients.length ? "" : "disabled"}>
+                   ${escapeHtml(state.modalClient || "Нет доступных клиентов")}
+                 </button>
+                 ${state.modalClientDropdownOpen
+                   ? `<div class="package-size-options booking-client-options" role="listbox">
+                       ${clients.map((client) => `
+                         <button type="button"
+                                 class="${client === state.modalClient ? "active" : ""}"
+                                 data-action="select-booking-client"
+                                 data-client="${escapeHtml(client)}"
+                                 role="option"
+                                 aria-selected="${client === state.modalClient}">
+                           ${escapeHtml(client)}
+                         </button>`).join("")}
+                     </div>`
+                   : ""}
+               </div>
+               <div class="modal-actions">
+                 <button class="btn-blue" data-action="save-booking">Сохранить</button>
+                 <button class="btn-gray" data-action="close-add-booking">Отмена</button>
+               </div>
+             </div>`}
       </div>
     </div>
   `;
+}
+
+function toggleBookingClientDropdown() {
+  state.modalClientDropdownOpen = !state.modalClientDropdownOpen;
+  render();
+}
+
+function selectBookingClient(clientName) {
+  if (!activeClients().includes(clientName)) return;
+  state.modalClient = clientName;
+  state.modalClientDropdownOpen = false;
+  render();
 }
 
 async function addBooking() {
@@ -4177,6 +4631,9 @@ async function addBooking() {
   // Теперь пересчитываем номера тренировок пакета
   await reindexPackageSessions(targetPkg.id);
   state.modalOpen = false;
+  state.modalClientDropdownOpen = false;
+  state.modalTab = "booking";
+  resetCalendarEventComposer();
   render();
 }
 
@@ -4187,10 +4644,15 @@ function clockText(minute) {
   return `${String(hour).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
 }
 
-function bookingIntervalsOverlap(firstStartMinute, secondStartMinute) {
+function bookingIntervalsOverlap(
+  firstStartMinute,
+  firstDurationMinutes,
+  secondStartMinute,
+  secondDurationMinutes
+) {
   return (
-    firstStartMinute < secondStartMinute + BOOKING_DURATION_MINUTES &&
-    secondStartMinute < firstStartMinute + BOOKING_DURATION_MINUTES
+    firstStartMinute < secondStartMinute + secondDurationMinutes &&
+    secondStartMinute < firstStartMinute + firstDurationMinutes
   );
 }
 
@@ -4213,9 +4675,10 @@ function bookingTimeZoneSummary(baseMinute) {
 
 function bookingMoveMinutes() {
   const range = scheduleMinuteRange();
+  const selectedDuration = normalizeDurationMinutes(state.bookingEditDurationMinutes);
   const firstMinute = Math.floor(range.startMinute / 15) * 15;
   const lastMinute = Math.ceil(
-    (range.endMinute - BOOKING_DURATION_MINUTES) / 15
+    (range.endMinute - selectedDuration) / 15
   ) * 15;
   const options = [];
 
@@ -4239,6 +4702,9 @@ function openBookingDetails(id) {
   state.bookingDetailsId = id;
   state.bookingMoveDateISO = booking.dateISO;
   state.bookingMoveMinute = bookingBaseMinute(booking);
+  state.bookingEditDurationMinutes = bookingDurationMinutes(booking);
+  state.bookingEditDurationCustom =
+    state.bookingEditDurationMinutes !== BOOKING_DURATION_MINUTES;
   state.bookingMoveCalendarMonthISO = monthStartISOFor(booking.dateISO);
   state.bookingMoveCalendarOpen = false;
   state.bookingMoveTimeOpen = false;
@@ -4251,6 +4717,8 @@ function closeBookingDetails() {
   state.bookingDetailsId = null;
   state.bookingMoveCalendarOpen = false;
   state.bookingMoveTimeOpen = false;
+  state.bookingEditDurationCustom = false;
+  state.bookingEditDurationMinutes = BOOKING_DURATION_MINUTES;
   render();
 }
 
@@ -4444,6 +4912,164 @@ function renderCalendarEventTimeWheel(scope, selectedMinute) {
     </div>`;
 }
 
+function durationScopeValue(scope) {
+  if (scope === "booking") return state.bookingEditDurationMinutes;
+  if (scope === "edit") return state.calendarEventEditDurationMinutes;
+  return state.calendarEventDraftDurationMinutes;
+}
+
+function durationScopeIsCustom(scope) {
+  if (scope === "booking") return state.bookingEditDurationCustom;
+  if (scope === "edit") return state.calendarEventEditDurationCustom;
+  return state.calendarEventDraftDurationCustom;
+}
+
+function setDurationScopeValue(scope, value) {
+  const duration = normalizeDurationMinutes(value);
+  if (scope === "booking") {
+    state.bookingEditDurationMinutes = duration;
+  } else if (scope === "edit") {
+    state.calendarEventEditDurationMinutes = duration;
+  } else {
+    state.calendarEventDraftDurationMinutes = duration;
+  }
+  return duration;
+}
+
+function renderDurationWheelColumn(scope, field, values, selectedValue) {
+  return `
+    <div class="booking-time-wheel-column"
+         data-duration-wheel="${field}"
+         data-duration-wheel-scope="${scope}"
+         role="listbox"
+         aria-label="${field === "hour" ? "Часы длительности" : "Минуты длительности"}">
+      ${values.map((value) => `
+        <button type="button"
+                class="booking-time-wheel-option ${value === selectedValue ? "active" : ""}"
+                data-action="select-duration-wheel"
+                data-scope="${scope}"
+                data-field="${field}"
+                data-value="${value}"
+                role="option"
+                aria-selected="${value === selectedValue}">
+          ${String(value).padStart(2, "0")}
+        </button>`).join("")}
+    </div>`;
+}
+
+function renderDurationWheel(scope, selectedDuration) {
+  const duration = normalizeDurationMinutes(selectedDuration);
+  const selectedHour = Math.floor(duration / 60);
+  const selectedMinute = duration % 60;
+  const hourValues = Array.from({ length: 13 }, (_, hour) => hour);
+
+  return `
+    <div class="booking-time-wheel booking-duration-wheel booking-move-picker-panel">
+      <div class="booking-time-wheel-selection" aria-hidden="true"></div>
+      ${renderDurationWheelColumn(scope, "hour", hourValues, selectedHour)}
+      <span class="booking-time-wheel-separator" aria-hidden="true">:</span>
+      ${renderDurationWheelColumn(scope, "minute", [0, 15, 30, 45], selectedMinute)}
+    </div>`;
+}
+
+function renderDurationControl(scope, custom, duration, disabled = false) {
+  return `
+    <div class="booking-duration-control">
+      <label class="booking-duration-toggle">
+        <input type="checkbox"
+               class="monthly-support-checkbox"
+               data-action="toggle-custom-duration"
+               data-scope="${scope}"
+               ${custom ? "checked" : ""}
+               ${disabled ? "disabled" : ""}>
+        <span>Другая длительность</span>
+        <strong data-duration-value="${scope}">${escapeHtml(durationText(duration))}</strong>
+      </label>
+      ${custom ? renderDurationWheel(scope, duration) : ""}
+    </div>`;
+}
+
+function toggleCustomDuration(scope) {
+  if (scope === "booking") {
+    state.bookingEditDurationCustom = !state.bookingEditDurationCustom;
+    if (!state.bookingEditDurationCustom) {
+      state.bookingEditDurationMinutes = BOOKING_DURATION_MINUTES;
+    }
+    state.bookingMoveCalendarOpen = false;
+    state.bookingMoveTimeOpen = false;
+  } else if (scope === "edit") {
+    if (!state.calendarEventEditHasTime) return;
+    state.calendarEventEditDurationCustom = !state.calendarEventEditDurationCustom;
+    if (!state.calendarEventEditDurationCustom) {
+      state.calendarEventEditDurationMinutes = BOOKING_DURATION_MINUTES;
+    }
+    state.calendarEventEditCalendarOpen = false;
+    state.calendarEventEditTimeOpen = false;
+  } else {
+    if (!state.calendarEventDraftHasTime) return;
+    state.calendarEventDraftDurationCustom = !state.calendarEventDraftDurationCustom;
+    if (!state.calendarEventDraftDurationCustom) {
+      state.calendarEventDraftDurationMinutes = BOOKING_DURATION_MINUTES;
+    }
+    state.calendarEventTimeOpen = false;
+  }
+  render();
+}
+
+function selectDurationWheel(scope, field, value) {
+  if (!Number.isFinite(value)) return;
+  const currentDuration = normalizeDurationMinutes(durationScopeValue(scope));
+  const currentHour = Math.floor(currentDuration / 60);
+  const currentMinute = currentDuration % 60;
+  const nextDuration = field === "hour"
+    ? value * 60 + currentMinute
+    : currentHour * 60 + value;
+  const duration = setDurationScopeValue(
+    scope,
+    nextDuration > 0 ? nextDuration : MIN_DURATION_MINUTES
+  );
+  syncDurationWheelSelection(scope, duration);
+}
+
+function syncDurationWheelSelection(scope, duration) {
+  const selectedHour = Math.floor(duration / 60);
+  const selectedMinute = duration % 60;
+  document.querySelectorAll(`[data-duration-wheel-scope="${scope}"]`).forEach((column) => {
+    const selectedValue = column.dataset.durationWheel === "hour"
+      ? selectedHour
+      : selectedMinute;
+    column.querySelectorAll(".booking-time-wheel-option").forEach((option) => {
+      const selected = Number(option.dataset.value) === selectedValue;
+      option.classList.toggle("active", selected);
+      option.setAttribute("aria-selected", String(selected));
+    });
+    const selected = column.querySelector('[aria-selected="true"]');
+    if (selected) {
+      column.scrollTop =
+        selected.offsetTop - (column.clientHeight - selected.offsetHeight) / 2;
+    }
+  });
+  const value = document.querySelector(`[data-duration-value="${scope}"]`);
+  if (value) value.textContent = durationText(duration);
+
+  if (scope === "booking") {
+    const booking = bookings.find((item) => item.id === state.bookingDetailsId);
+    const saveButton = document.querySelector('[data-action="save-booking-move"]');
+    if (booking && saveButton) {
+      saveButton.disabled = !bookingDetailsHasChanges(booking);
+    }
+  }
+}
+
+function positionDurationWheels() {
+  document.querySelectorAll("[data-duration-wheel]").forEach((column) => {
+    const selected = column.querySelector('[aria-selected="true"]');
+    if (!selected) return;
+    column.scrollTop =
+      selected.offsetTop - (column.clientHeight - selected.offsetHeight) / 2;
+  });
+}
+
 function selectCalendarEventTimeWheel(scope, field, value) {
   if (!Number.isFinite(value)) return;
   const isEdit = scope === "edit";
@@ -4464,7 +5090,61 @@ function selectCalendarEventTimeWheel(scope, field, value) {
     state.calendarEventDraftHasTime = true;
     state.calendarEventTimeOpen = true;
   }
-  render();
+  syncTimeWheelSelection(scope, field, value, nextMinute);
+}
+
+function syncTimeWheelSelection(scope, field, value, selectedMinute) {
+  const selector = scope === "booking"
+    ? `[data-booking-time-wheel="${field}"]`
+    : `[data-calendar-event-time-wheel="${field}"][data-time-wheel-scope="${scope}"]`;
+  const column = document.querySelector(selector);
+
+  if (column) {
+    column.querySelectorAll(".booking-time-wheel-option").forEach((option) => {
+      const selected = Number(option.dataset.value) === value;
+      option.classList.toggle("active", selected);
+      option.setAttribute("aria-selected", String(selected));
+    });
+
+    const selected = column.querySelector('[aria-selected="true"]');
+    if (selected) {
+      const targetTop =
+        selected.offsetTop - (column.clientHeight - selected.offsetHeight) / 2;
+      if (Math.abs(column.scrollTop - targetTop) > 0.5) {
+        column.scrollTop = targetTop;
+      }
+    }
+  }
+
+  if (scope === "booking") {
+    const modal = document.querySelector(".booking-details-modal");
+    const main = modal?.querySelector(".booking-move-time-main");
+    const detail = modal?.querySelector(".booking-move-time-detail");
+    const saveButton = modal?.querySelector('[data-action="save-booking-move"]');
+    const booking = bookings.find((item) => item.id === state.bookingDetailsId);
+    if (main) main.textContent = clockText(selectedMinute);
+    if (detail) detail.textContent = bookingTimeZoneSummary(selectedMinute);
+    if (saveButton && booking) {
+      saveButton.disabled =
+        booking.dateISO === state.bookingMoveDateISO &&
+        bookingBaseMinute(booking) === Number(selectedMinute);
+    }
+    return;
+  }
+
+  if (scope === "edit") {
+    const modal = document.querySelector(".calendar-event-details-modal");
+    const main = modal?.querySelector(".calendar-event-edit-time-field-wrap .booking-move-time-main");
+    const detail = modal?.querySelector(".calendar-event-edit-time-field-wrap .booking-move-time-detail");
+    if (main) main.textContent = clockText(selectedMinute);
+    if (detail) detail.textContent = bookingTimeZoneSummary(selectedMinute);
+    return;
+  }
+
+  const createTime = document.querySelector(
+    ".calendar-day-details-modal .calendar-event-time-field > span"
+  );
+  if (createTime) createTime.textContent = clockText(selectedMinute);
 }
 
 function positionCalendarEventTimeWheels() {
@@ -4474,6 +5154,15 @@ function positionCalendarEventTimeWheels() {
     column.scrollTop =
       selected.offsetTop - (column.clientHeight - selected.offsetHeight) / 2;
   });
+}
+
+function bookingDetailsHasChanges(booking) {
+  return (
+    booking.dateISO !== state.bookingMoveDateISO ||
+    bookingBaseMinute(booking) !== Number(state.bookingMoveMinute) ||
+    bookingDurationMinutes(booking) !==
+      normalizeDurationMinutes(state.bookingEditDurationMinutes)
+  );
 }
 
 function renderBookingDetailsModal() {
@@ -4493,9 +5182,8 @@ function renderBookingDetailsModal() {
   const sessionPrice = packagePrice !== null && Number(packageData?.size) > 0
     ? packagePrice / Number(packageData.size)
     : null;
-  const hasChanges =
-    booking.dateISO !== state.bookingMoveDateISO ||
-    currentMinute !== Number(state.bookingMoveMinute);
+  const currentDuration = bookingDurationMinutes(booking);
+  const hasChanges = bookingDetailsHasChanges(booking);
 
   return `
     <div class="modal-overlay booking-details-overlay" data-action="overlay-click">
@@ -4512,6 +5200,10 @@ function renderBookingDetailsModal() {
             <strong>${escapeHtml(bookingTimeZoneSummary(currentMinute))}</strong>
           </div>
           <div class="booking-details-info-row">
+            <span>Длительность</span>
+            <strong>${escapeHtml(durationText(currentDuration))}</strong>
+          </div>
+          <div class="booking-details-info-row">
             <span>Пакет</span>
             <strong>${escapeHtml(sessionText)}</strong>
           </div>
@@ -4526,7 +5218,7 @@ function renderBookingDetailsModal() {
         </div>
 
         <div class="booking-move-section">
-          <div class="booking-move-title">Перенести запись</div>
+          <div class="booking-move-title">Дата, время и длительность</div>
           <div class="booking-move-controls">
             <div class="booking-move-field">
               <span class="booking-move-label">Новая дата</span>
@@ -4551,6 +5243,11 @@ function renderBookingDetailsModal() {
           </div>
           ${state.bookingMoveCalendarOpen ? renderBookingMoveCalendar() : ""}
           ${state.bookingMoveTimeOpen ? renderBookingMoveTimeWheel() : ""}
+          ${renderDurationControl(
+            "booking",
+            state.bookingEditDurationCustom,
+            state.bookingEditDurationMinutes
+          )}
         </div>
 
         <div class="modal-actions">
@@ -4558,7 +5255,7 @@ function renderBookingDetailsModal() {
           <button class="btn-blue"
                   data-action="save-booking-move"
                   ${hasChanges ? "" : "disabled"}>
-            Перенести
+            Сохранить
           </button>
         </div>
       </div>
@@ -4602,14 +5299,9 @@ function selectBookingTimeWheel(field, value) {
     ? value * 60 + currentMinutePart
     : Math.floor(currentMinute / 60) * 60 + value;
 
-  if (nextMinute === currentMinute) {
-    positionBookingTimeWheel();
-    return;
-  }
-
   state.bookingMoveMinute = nextMinute;
   state.bookingMoveTimeOpen = true;
-  render();
+  syncTimeWheelSelection("booking", field, value, nextMinute);
 }
 
 function positionBookingTimeWheel() {
@@ -4625,19 +5317,31 @@ function handleBookingTimeWheelScroll(event) {
   const column = event.target;
   if (
     !(column instanceof Element) ||
-    !column.matches("[data-booking-time-wheel], [data-calendar-event-time-wheel]")
+    !column.matches(
+      "[data-booking-time-wheel], [data-calendar-event-time-wheel], [data-duration-wheel]"
+    )
   ) {
     return;
   }
 
-  clearTimeout(bookingTimeWheelScrollTimer);
-  bookingTimeWheelScrollTimer = setTimeout(() => {
+  clearTimeout(bookingTimeWheelScrollTimers.get(column));
+  const scrollTimer = setTimeout(() => {
+    const isDurationWheel = column.hasAttribute("data-duration-wheel");
+    const durationScope = column.dataset.durationWheelScope;
+    if (isDurationWheel && !durationScopeIsCustom(durationScope)) return;
+
     const isBookingWheel = column.hasAttribute("data-booking-time-wheel");
     const eventScope = column.dataset.timeWheelScope;
     const eventWheelOpen = eventScope === "edit"
       ? state.calendarEventEditTimeOpen
       : state.calendarEventTimeOpen;
-    if (!(isBookingWheel ? state.bookingMoveTimeOpen : eventWheelOpen) || !column.isConnected) {
+    if (
+      !isDurationWheel &&
+      !(isBookingWheel ? state.bookingMoveTimeOpen : eventWheelOpen)
+    ) {
+      return;
+    }
+    if (!column.isConnected) {
       return;
     }
 
@@ -4650,7 +5354,13 @@ function handleBookingTimeWheelScroll(event) {
     }, null);
     const value = Number(nearest?.option.dataset.value);
     if (!Number.isFinite(value)) return;
-    if (isBookingWheel) {
+    if (isDurationWheel) {
+      selectDurationWheel(
+        durationScope,
+        column.dataset.durationWheel,
+        value
+      );
+    } else if (isBookingWheel) {
       selectBookingTimeWheel(column.dataset.bookingTimeWheel, value);
     } else {
       selectCalendarEventTimeWheel(
@@ -4659,7 +5369,8 @@ function handleBookingTimeWheelScroll(event) {
         value
       );
     }
-  }, 100);
+  }, 180);
+  bookingTimeWheelScrollTimers.set(column, scrollTimer);
 }
 
 document.addEventListener("scroll", handleBookingTimeWheelScroll, true);
@@ -4674,6 +5385,11 @@ async function saveBookingMove() {
 
   const dateISO = state.bookingMoveDateISO;
   const startMinute = Number(state.bookingMoveMinute);
+  const durationMinutes = normalizeDurationMinutes(
+    state.bookingEditDurationCustom
+      ? state.bookingEditDurationMinutes
+      : BOOKING_DURATION_MINUTES
+  );
   if (!dateISO || !Number.isFinite(startMinute)) {
     showToast("Выберите дату и время.", "error");
     return;
@@ -4682,6 +5398,7 @@ async function saveBookingMove() {
   const slotIsBusy = calendarScheduleSlotIsBusy(
     dateISO,
     startMinute,
+    durationMinutes,
     booking.id
   );
   if (slotIsBusy) {
@@ -4694,7 +5411,7 @@ async function saveBookingMove() {
       dateISO,
       hour: startMinute / 60,
       minuteOfDay: startMinute,
-      durationMinutes: BOOKING_DURATION_MINUTES,
+      durationMinutes,
       utcMinute: zoneToZoneMinute(
         startMinute,
         timeSettings.yellow.zoneId,
@@ -4716,8 +5433,10 @@ async function saveBookingMove() {
     state.bookingDetailsId = null;
     state.bookingMoveCalendarOpen = false;
     state.bookingMoveTimeOpen = false;
+    state.bookingEditDurationCustom = false;
+    state.bookingEditDurationMinutes = BOOKING_DURATION_MINUTES;
     render();
-    showToast("Запись перенесена.", "success");
+    showToast("Запись сохранена.", "success");
   } catch (err) {
     console.error("Ошибка переноса записи:", err);
     showToast("Не удалось перенести запись.", "error");
@@ -4737,6 +5456,27 @@ function openConfirmDeleteBooking(id) {
     title: "Удалить запись?",
     type: "booking",
     bookingId: id
+  };
+  render();
+}
+
+function openConfirmDeleteCalendarEvent(id) {
+  const event = calendarEvents.find((item) => item.id === id);
+  if (!event) {
+    showToast("Событие уже удалено.", "error");
+    return;
+  }
+
+  state.confirm = {
+    open: true,
+    title: "Удалить событие?",
+    message: `Событие «${event.title || "Без названия"}» будет удалено.`,
+    type: "calendar-event",
+    itemId: id,
+    bookingId: null,
+    deleteMode: "delete-all",
+    dropdownOpen: false,
+    pending: false
   };
   render();
 }
@@ -4904,6 +5644,16 @@ async function handleConfirmOk(e) {
       case "booking":
         await deleteBookingAndReindex(id);
         break;
+
+      case "calendar-event": {
+        const deleted = await deleteCalendarEvent(id);
+        if (!deleted) {
+          state.confirm.pending = false;
+          render();
+          return;
+        }
+        break;
+      }
 
       case "package":
         await requestRemovePackageForce(id);
@@ -5080,11 +5830,15 @@ function openPackageModal(prefill) {
   const group = sharedClientGroups().find((item) =>
     item.members.includes(prefill)
   );
+  const packageClient = group?.main || prefill || "";
+  const previousPackage = latestPersonalPackage(packageClient);
+  const previousSize = Number(previousPackage?.size);
+  const allowedSizes = [1, 5, 10, 20];
 
   state.packageModalOpen = true;
-  state.packageClient = group?.main || prefill || "";
+  state.packageClient = packageClient;
   state.packageMainLocked = Boolean(group);
-  state.packageSize = 10;
+  state.packageSize = allowedSizes.includes(previousSize) ? previousSize : 10;
   state.packageSizeDropdownOpen = false;
   state.packageMembers = group
     ? group.members
@@ -5100,6 +5854,8 @@ function openPackageModal(prefill) {
   state.packageMonthly = false;
   state.packagePrice = "";
   state.packagePriceEditing = true;
+  state.packagePriceTargetId = null;
+  state.packagePricePending = false;
   state.packageStartISO = todayISO;
   state.packageCalendarMonthISO = monthStartISOFor(todayISO);
   state.packageCalendarOpen = false;
@@ -5168,8 +5924,12 @@ function renderPackageModal() {
             : ""
         }
         <div class="modal-actions">
-          <button class="btn-blue" data-action="save-package">Сохранить</button>
-          <button class="btn-gray" data-action="close-package-modal">Отмена</button>
+          <button class="btn-blue"
+                  data-action="save-package"
+                  ${state.packagePricePending ? "disabled" : ""}>Сохранить</button>
+          <button class="btn-gray"
+                  data-action="close-package-modal"
+                  ${state.packagePricePending ? "disabled" : ""}>Отмена</button>
         </div>
       </div>
     </div>
@@ -5178,6 +5938,7 @@ function renderPackageModal() {
 
 function renderPackagePriceField() {
   const editing = state.packagePriceEditing;
+  const pending = state.packagePricePending;
   const label = state.packageMonthly ? "Стоимость ведения в месяц" : "Стоимость пакета";
   const actionLabel = editing ? "Подтвердить стоимость" : "Изменить стоимость";
 
@@ -5192,11 +5953,13 @@ function renderPackagePriceField() {
                placeholder="Например, 40 000"
                value="${escapeHtml(state.packagePrice)}"
                data-bind="packagePrice"
-               ${editing ? "" : "readonly"}>
+               ${editing ? "" : "readonly"}
+               ${pending ? "disabled" : ""}>
         <button type="button"
                 data-action="toggle-package-price-edit"
                 aria-label="${actionLabel}"
-                title="${actionLabel}">
+                title="${actionLabel}"
+                ${pending ? "disabled" : ""}>
           ${editing
             ? `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
                  <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m5 12 4 4L19 6"></path>
@@ -5265,7 +6028,9 @@ function selectPackageSize(size) {
   render();
 }
 
-function togglePackagePriceEdit() {
+async function togglePackagePriceEdit() {
+  if (state.packagePricePending) return;
+
   if (state.packagePriceEditing) {
     const amount = parsePriceInput(state.packagePrice);
     if (amount === null) {
@@ -5273,6 +6038,30 @@ function togglePackagePriceEdit() {
       return;
     }
     state.packagePrice = priceInputText(amount);
+
+    const targetPackage = !state.packageMonthly
+      ? activePersonalPackage(state.packageClient, state.packageSize)
+      : null;
+    const targetMatches =
+      targetPackage?.id && targetPackage.id === state.packagePriceTargetId;
+
+    if (
+      targetMatches &&
+      packagePriceAmount(targetPackage) !== amount
+    ) {
+      state.packagePricePending = true;
+      try {
+        await updateDoc(doc(db, "packages", targetPackage.id), { price: amount });
+        showToast("Стоимость сохранена в текущем пакете.", "success");
+      } catch (err) {
+        console.error("Ошибка сохранения стоимости пакета:", err);
+        showToast("Не удалось сохранить стоимость пакета.", "error");
+        return;
+      } finally {
+        state.packagePricePending = false;
+      }
+    }
+
     state.packagePriceEditing = false;
     render();
     return;
@@ -5631,6 +6420,7 @@ function selectPackageStartDate(dateISO) {
 }
 
 async function savePackage() {
+  if (state.packagePricePending) return;
   const raw = (state.packageClient || "").trim();
   if (!raw) {
     showToast("Введите имя клиента.", "error");
@@ -5729,6 +6519,8 @@ async function savePackage() {
   state.packageCalendarOpen = false;
   state.packagePrice = "";
   state.packagePriceEditing = true;
+  state.packagePriceTargetId = null;
+  state.packagePricePending = false;
   render();
   showToast(
     state.packageMonthly ? "Добавлено в месячное ведение." : "Пакет добавлен.",
@@ -5817,6 +6609,19 @@ document.body.addEventListener("click", (e) => {
   const memberField = e.target.closest(
     '[data-action="open-package-member-picker"]'
   );
+  const bookingClientSelect = e.target.closest(".booking-client-select");
+
+  if (
+    state.modalOpen &&
+    state.modalClientDropdownOpen &&
+    !bookingClientSelect
+  ) {
+    state.modalClientDropdownOpen = false;
+    e.preventDefault();
+    e.stopPropagation();
+    render();
+    return;
+  }
 
   if (
     modalInner &&
@@ -5963,6 +6768,20 @@ document.addEventListener("click", async (e) => {
       );
       break;
 
+    case "toggle-custom-duration":
+      await haptic("soft");
+      toggleCustomDuration(el.dataset.scope);
+      break;
+
+    case "select-duration-wheel":
+      await haptic("soft");
+      selectDurationWheel(
+        el.dataset.scope,
+        el.dataset.field,
+        Number(el.dataset.value)
+      );
+      break;
+
     case "save-calendar-event":
       void haptic("rigid");
       await saveCalendarEvent();
@@ -5970,10 +6789,11 @@ document.addEventListener("click", async (e) => {
 
     case "delete-calendar-event":
       void haptic("rigid");
-      await deleteCalendarEvent(el.dataset.id);
+      openConfirmDeleteCalendarEvent(el.dataset.id);
       break;
 
     case "open-calendar-event-details":
+      if (Date.now() < suppressBookingTapUntil) break;
       await haptic("soft");
       openCalendarEventDetails(el.dataset.id);
       break;
@@ -6021,8 +6841,22 @@ document.addEventListener("click", async (e) => {
     // ----- CLOSE MODAL -----
     case "close-add-booking":
       await haptic("rigid");
-      state.modalOpen = false;
-      render();
+      closeAddEntryModal();
+      break;
+
+    case "set-add-entry-tab":
+      await haptic("soft");
+      setAddEntryTab(el.dataset.tab);
+      break;
+
+    case "toggle-booking-client-dropdown":
+      await haptic("soft");
+      toggleBookingClientDropdown();
+      break;
+
+    case "select-booking-client":
+      await haptic("soft");
+      selectBookingClient(el.dataset.client || "");
       break;
 
     // ----- SAVE BOOKING rigid -----
@@ -6270,7 +7104,7 @@ document.addEventListener("click", async (e) => {
 
     case "toggle-package-price-edit":
       await haptic("soft");
-      togglePackagePriceEdit();
+      await togglePackagePriceEdit();
       break;
 
     case "toggle-package-monthly":
@@ -6300,6 +7134,7 @@ document.addEventListener("click", async (e) => {
 
     // ----- CLOSE PACKAGE MODAL rigid -----
     case "close-package-modal":
+      if (state.packagePricePending) break;
       await haptic("rigid");
       state.packageModalOpen = false;
       state.packageMembers = [];
@@ -6308,6 +7143,8 @@ document.addEventListener("click", async (e) => {
       state.packageCalendarOpen = false;
       state.packagePrice = "";
       state.packagePriceEditing = true;
+      state.packagePriceTargetId = null;
+      state.packagePricePending = false;
       render();
       break;
 
@@ -6377,6 +7214,22 @@ async function hapticTap() {
   // безопасное закрытие модалок при клике в фон
 document.addEventListener("click", (e) => {
   if (e.target.classList.contains("modal-overlay")) {
+    if (state.modalOpen && state.modalClientDropdownOpen) {
+      state.modalClientDropdownOpen = false;
+      render();
+      return;
+    }
+
+    if (state.modalOpen) {
+      if (state.modalTab === "event" && state.calendarEventTimeOpen) {
+        state.calendarEventTimeOpen = false;
+        render();
+        return;
+      }
+      if (state.calendarEventPending) return;
+      closeAddEntryModal();
+      return;
+    }
     if (
       state.bookingDetailsOpen &&
       (state.bookingMoveCalendarOpen || state.bookingMoveTimeOpen)
@@ -6454,6 +7307,8 @@ document.addEventListener("click", (e) => {
     }
 
     state.modalOpen = false;
+    state.modalClientDropdownOpen = false;
+    state.modalTab = "booking";
     state.packageModalOpen = false;
     state.packageMembers = [];
     state.packageMemberPickerOpen = null;
@@ -6461,6 +7316,8 @@ document.addEventListener("click", (e) => {
     state.packageCalendarOpen = false;
     state.packagePrice = "";
     state.packagePriceEditing = true;
+    state.packagePriceTargetId = null;
+    state.packagePricePending = false;
     state.timeSettingsModalOpen = false;
     state.timeSettingsDraft = null;
     state.bookingDetailsOpen = false;
@@ -6490,8 +7347,11 @@ document.addEventListener("click", (e) => {
     state.calendarDayDetailsMode = "all";
     state.calendarEventComposerOpen = false;
     state.calendarEventDraft = "";
+    state.calendarEventDraftDateISO = "";
     state.calendarEventDraftHasTime = false;
     state.calendarEventTimeOpen = false;
+    state.calendarEventDraftDurationCustom = false;
+    state.calendarEventDraftDurationMinutes = BOOKING_DURATION_MINUTES;
     state.calendarEventPending = false;
     state.calendarEventDeleteId = null;
     state.calendarEventDetailsOpen = false;
@@ -6499,6 +7359,8 @@ document.addEventListener("click", (e) => {
     state.calendarEventEditTitle = "";
     state.calendarEventEditCalendarOpen = false;
     state.calendarEventEditTimeOpen = false;
+    state.calendarEventEditDurationCustom = false;
+    state.calendarEventEditDurationMinutes = BOOKING_DURATION_MINUTES;
     state.calendarEventEditPending = false;
     state.confirm.open = false;
     render();
