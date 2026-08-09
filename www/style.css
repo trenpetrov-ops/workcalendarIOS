@@ -53,7 +53,7 @@ html, body {
 }
 
 #app {
-  padding: 0px 7px 100px 7px;
+  padding: 0px 7px 0px 7px;
   font-size: 12px;
 }
 
@@ -231,7 +231,7 @@ button {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  padding-right: 44px;
+  padding-right: 60px;
   box-sizing: border-box;
 }
 
@@ -3458,10 +3458,10 @@ button.calendar-agenda-detail-copy:active {
 /* Кнопка переключения страниц в верхней панели */
 .fab-btn{
   position: fixed;
-  top: calc(var(--page-safe-top) + 10px);
+  top: calc(var(--page-safe-top) + 28px);
   right: 16px;
-  width: 36px;
-  height: 36px;
+  width: 45px;
+  height: 45px;
   margin: 0;
   padding: 0;
   border: 0;
@@ -3472,6 +3472,7 @@ button.calendar-agenda-detail-copy:active {
   z-index: 60;
   display: grid;
   place-items: center;
+  transform: translateY(-50%);
   transition: transform .2s ease, box-shadow .2s ease;
 }
 
@@ -3480,8 +3481,8 @@ button.calendar-agenda-detail-copy:active {
 }
 
 .fab-btn .lottie-icon {
-  width: 32px;
-  height: 32px;
+  width: 44px;
+  height: 44px;
 }
 
 

@@ -581,8 +581,8 @@ document.addEventListener("click", (e) => {
 
 
 const LONG_PRESS_MS = 500;
-const LONG_PRESS_PREVIEW_MS = 80;
-const MOVE_TOLERANCE = 16;
+const LONG_PRESS_PREVIEW_MS = 300;
+const LONG_PRESS_MOVE_TOLERANCE = 8;
 
 let longPressTimer = null;
 let longPressPreviewTimer = null;
@@ -715,10 +715,11 @@ document.addEventListener("pointerdown", (e) => {
 
 document.addEventListener("pointermove", (e) => {
   if (!targetEl || e.pointerId !== activeLongPressPointerId) return;
-  const dx = Math.abs(e.clientX - lpStartX);
-  const dy = Math.abs(e.clientY - lpStartY);
+  const dx = e.clientX - lpStartX;
+  const dy = e.clientY - lpStartY;
+  const distance = Math.hypot(dx, dy);
 
-  if (dx > MOVE_TOLERANCE || dy > MOVE_TOLERANCE) {
+  if (distance > LONG_PRESS_MOVE_TOLERANCE) {
     isMoving = true;
     if (targetEl.closest(".booking-item, .calendar-scheduled-event")) {
       suppressBookingTapUntil = Date.now() + 500;
