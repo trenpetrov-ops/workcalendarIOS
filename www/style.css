@@ -1470,6 +1470,30 @@ p.modal-subtext {
   -webkit-overflow-scrolling: touch;
 }
 
+.add-booking-time-block {
+  display: grid;
+  gap: 5px;
+  margin-top: 9px;
+}
+
+.add-booking-time-label {
+  margin-left: 1px;
+  color: #526372;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.add-booking-time-field {
+  text-align: left;
+}
+
+.add-booking-time-field > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .package-price-block {
   margin: 0 0 8px;
 }
@@ -2193,6 +2217,11 @@ p.modal-subtext {
   min-height: 0;
   padding: 0;
   box-sizing: border-box;
+}
+
+.fixed-time-table.calendar-no-agenda tbody tr:last-child td,
+.calendar-scroll-inner table.calendar-no-agenda tbody tr:last-child td {
+  border-bottom: 0;
 }
 
 .fixed-time-table tfoot td,
@@ -3440,7 +3469,7 @@ button.calendar-agenda-detail-copy:active {
 }
 
 .calendar-hour-cell.has-booking {
-  z-index: auto;
+  z-index: var(--calendar-row-layer, 1);
 }
 
 .calendar-hour-cell.long-press-front {

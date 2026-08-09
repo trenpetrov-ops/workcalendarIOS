@@ -141,6 +141,7 @@ const state = {
   modalMinute: 9 * 60,
   modalClient: "",
   modalClientDropdownOpen: false,
+  modalTimeOpen: false,
   modalTab: "booking",
 
   timeSettingsModalOpen: false,
@@ -756,6 +757,7 @@ document.addEventListener("contextmenu", (e) => {
 function closeAllTransient() {
   state.modalOpen = false;
   state.modalClientDropdownOpen = false;
+  state.modalTimeOpen = false;
   state.modalTab = "booking";
   state.packageModalOpen = false;
   state.packageMembers = [];
@@ -1975,6 +1977,7 @@ function render() {
       requestAnimationFrame(positionBookingTimeWheel);
     }
     if (
+      (state.modalOpen && state.modalTab === "booking" && state.modalTimeOpen) ||
       (state.calendarDayDetailsOpen && state.calendarEventTimeOpen) ||
       (state.calendarEventDetailsOpen && state.calendarEventEditTimeOpen)
     ) {
@@ -2111,6 +2114,7 @@ function renderWeek(
   paymentRowHeight,
   eventRowHeight
 ) {
+  const agendaClass = showPaymentRow || showEventRow ? "" : " calendar-no-agenda";
   const base = addWeeks(state.anchorDate, offset);
   const week = weekDays(base);
   const bookingsByDate = new Map(
@@ -2137,7 +2141,7 @@ function renderWeek(
   );
   const ruShort = ["вс", "пн", "вт", "ср", "чт", "пт", "сб"];
 
-  let html = `<table><thead><tr>`;
+  let html = `<table class="${agendaClass.trim()}"><thead><tr>`;
 
   week.forEach((day, idx) => {
     const dateStr = format(day, "d");
@@ -2159,8 +2163,9 @@ function renderWeek(
 
   html += `</tr></thead><tbody>`;
 
-  hourMinutes.forEach((hourMinute) => {
-    html += `<tr class="calendar-hour-row">`;
+  hourMinutes.forEach((hourMinute, rowIndex) => {
+    const rowLayer = hourMinutes.length - rowIndex;
+    html += `<tr class="calendar-hour-row" style="--calendar-row-layer:${rowLayer}">`;
 
     week.forEach((day, idx) => {
       const dateISO = format(day, "yyyy-MM-dd");
@@ -2300,9 +2305,10 @@ function renderFixedTimes(
   paymentRowHeight,
   eventRowHeight
 ) {
+  const agendaClass = showPaymentRow || showEventRow ? "" : " calendar-no-agenda";
   const columns = visibleTimeColumns();
   const totalColspan = columns.reduce((sum, column) => sum + column.colspan, 0);
-  let html = `<table class="fixed-time-table"><thead><tr>`;
+  let html = `<table class="fixed-time-table${agendaClass}"><thead><tr>`;
 
   columns.forEach((column) => {
     html += `
@@ -4379,6 +4385,7 @@ function openAddBookingModal(dateISO, minute) {
   state.modalMinute = minute;
   state.modalClient = activeClients()[0] || "";
   state.modalClientDropdownOpen = false;
+  state.modalTimeOpen = false;
   state.modalTab = "booking";
   state.calendarEventComposerOpen = false;
   state.calendarEventDraft = "";
@@ -4397,6 +4404,7 @@ function setAddEntryTab(tab) {
   if (state.calendarEventPending) return;
   state.modalTab = tab === "event" ? "event" : "booking";
   state.modalClientDropdownOpen = false;
+  state.modalTimeOpen = false;
   state.calendarEventTimeOpen = false;
   if (state.modalTab === "event") {
     state.calendarEventDraftDateISO = state.modalDateISO || "";
@@ -4414,6 +4422,7 @@ function closeAddEntryModal() {
   if (state.calendarEventPending) return;
   state.modalOpen = false;
   state.modalClientDropdownOpen = false;
+  state.modalTimeOpen = false;
   state.modalTab = "booking";
   resetCalendarEventComposer();
   render();
@@ -4423,11 +4432,7 @@ function renderAddBookingModal() {
   const d = state.modalDateISO
     ? format(parseISO(state.modalDateISO), "d LLL (EEE)", { locale: ru })
     : "";
-  const columns = visibleTimeColumns();
   const startMinute = state.modalMinute;
-  const timeText = columns
-    .map((column) => formatColumnTime(startMinute, column.settings))
-    .join(" / ");
   const clients = activeClients();
   const isEventTab = state.modalTab === "event";
 
@@ -4435,7 +4440,7 @@ function renderAddBookingModal() {
     <div class="modal-overlay" data-action="overlay-click">
       <div class="modal add-booking-modal ${isEventTab ? "event-tab" : "booking-tab"}">
         <h3>Добавить запись</h3>
-        <p>${escapeHtml(d)}${isEventTab ? "" : ` — ${timeText}`}</p>
+        <p>${escapeHtml(d)}</p>
 
         <div class="add-entry-tabs" role="tablist" aria-label="Тип записи">
           <button type="button"
@@ -4536,6 +4541,21 @@ function renderAddBookingModal() {
                      </div>`
                    : ""}
                </div>
+               <div class="add-booking-time-block">
+                 <span class="add-booking-time-label">Время тренировки</span>
+                 <button type="button"
+                         class="calendar-event-time-field add-booking-time-field has-time ${state.modalTimeOpen ? "open" : ""}"
+                         data-action="toggle-add-booking-time"
+                         aria-expanded="${state.modalTimeOpen}">
+                   <span>${escapeHtml(bookingTimeZoneSummary(startMinute))}</span>
+                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+                     <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 8v4l2.5 1.5M21 12a9 9 0 1 1-9-9 9 9 0 0 1 9 9Z"></path>
+                   </svg>
+                 </button>
+                 ${state.modalTimeOpen
+                   ? renderCalendarEventTimeWheel("add-booking", startMinute)
+                   : ""}
+               </div>
                <div class="modal-actions">
                  <button class="btn-blue" data-action="save-booking">Сохранить</button>
                  <button class="btn-gray" data-action="close-add-booking">Отмена</button>
@@ -4547,7 +4567,14 @@ function renderAddBookingModal() {
 }
 
 function toggleBookingClientDropdown() {
+  state.modalTimeOpen = false;
   state.modalClientDropdownOpen = !state.modalClientDropdownOpen;
+  render();
+}
+
+function toggleAddBookingTime() {
+  state.modalClientDropdownOpen = false;
+  state.modalTimeOpen = !state.modalTimeOpen;
   render();
 }
 
@@ -4632,6 +4659,7 @@ async function addBooking() {
   await reindexPackageSessions(targetPkg.id);
   state.modalOpen = false;
   state.modalClientDropdownOpen = false;
+  state.modalTimeOpen = false;
   state.modalTab = "booking";
   resetCalendarEventComposer();
   render();
@@ -5073,8 +5101,13 @@ function positionDurationWheels() {
 function selectCalendarEventTimeWheel(scope, field, value) {
   if (!Number.isFinite(value)) return;
   const isEdit = scope === "edit";
+  const isAddBooking = scope === "add-booking";
   const currentMinute = Number(
-    isEdit ? state.calendarEventEditMinute : state.calendarEventDraftMinute
+    isEdit
+      ? state.calendarEventEditMinute
+      : isAddBooking
+        ? state.modalMinute
+        : state.calendarEventDraftMinute
   );
   const currentMinutePart = normalizeMinuteOfDay(currentMinute) % 60;
   const nextMinute = field === "hour"
@@ -5085,6 +5118,9 @@ function selectCalendarEventTimeWheel(scope, field, value) {
     state.calendarEventEditMinute = nextMinute;
     state.calendarEventEditHasTime = true;
     state.calendarEventEditTimeOpen = true;
+  } else if (isAddBooking) {
+    state.modalMinute = nextMinute;
+    state.modalTimeOpen = true;
   } else {
     state.calendarEventDraftMinute = nextMinute;
     state.calendarEventDraftHasTime = true;
@@ -5129,6 +5165,12 @@ function syncTimeWheelSelection(scope, field, value, selectedMinute) {
         booking.dateISO === state.bookingMoveDateISO &&
         bookingBaseMinute(booking) === Number(selectedMinute);
     }
+    return;
+  }
+
+  if (scope === "add-booking") {
+    const field = document.querySelector(".add-booking-time-field > span");
+    if (field) field.textContent = bookingTimeZoneSummary(selectedMinute);
     return;
   }
 
@@ -5334,7 +5376,9 @@ function handleBookingTimeWheelScroll(event) {
     const eventScope = column.dataset.timeWheelScope;
     const eventWheelOpen = eventScope === "edit"
       ? state.calendarEventEditTimeOpen
-      : state.calendarEventTimeOpen;
+      : eventScope === "add-booking"
+        ? state.modalTimeOpen
+        : state.calendarEventTimeOpen;
     if (
       !isDurationWheel &&
       !(isBookingWheel ? state.bookingMoveTimeOpen : eventWheelOpen)
@@ -6854,6 +6898,11 @@ document.addEventListener("click", async (e) => {
       toggleBookingClientDropdown();
       break;
 
+    case "toggle-add-booking-time":
+      await haptic("soft");
+      toggleAddBookingTime();
+      break;
+
     case "select-booking-client":
       await haptic("soft");
       selectBookingClient(el.dataset.client || "");
@@ -7221,6 +7270,11 @@ document.addEventListener("click", (e) => {
     }
 
     if (state.modalOpen) {
+      if (state.modalTab === "booking" && state.modalTimeOpen) {
+        state.modalTimeOpen = false;
+        render();
+        return;
+      }
       if (state.modalTab === "event" && state.calendarEventTimeOpen) {
         state.calendarEventTimeOpen = false;
         render();
@@ -7308,6 +7362,7 @@ document.addEventListener("click", (e) => {
 
     state.modalOpen = false;
     state.modalClientDropdownOpen = false;
+    state.modalTimeOpen = false;
     state.modalTab = "booking";
     state.packageModalOpen = false;
     state.packageMembers = [];
