@@ -1,4 +1,4 @@
-const CACHE_VERSION = "v33";
+const CACHE_VERSION = "v35";
 const CACHE_NAME = `trainer-calendar-${CACHE_VERSION}`;
 
 const APP_ASSETS = [

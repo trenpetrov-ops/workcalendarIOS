@@ -7,8 +7,21 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Override point for customization after application launch.
+        DispatchQueue.main.async { [weak self] in
+            self?.disableWebViewBounce()
+        }
         return true
+    }
+
+    private func disableWebViewBounce() {
+        guard let bridgeViewController = window?.rootViewController as? CAPBridgeViewController,
+              let webView = bridgeViewController.webView else {
+            return
+        }
+
+        webView.scrollView.bounces = false
+        webView.scrollView.alwaysBounceVertical = false
+        webView.scrollView.alwaysBounceHorizontal = false
     }
 
     func applicationWillResignActive(_ application: UIApplication) {
@@ -26,7 +39,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func applicationDidBecomeActive(_ application: UIApplication) {
-        // Restart any tasks that were paused (or not yet started) while the application was inactive. If the application was previously in the background, optionally refresh the user interface.
+        disableWebViewBounce()
     }
 
     func applicationWillTerminate(_ application: UIApplication) {

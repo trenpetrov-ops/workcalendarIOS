@@ -19,24 +19,25 @@ body {
 }
 
 html, body {
-    touch-action: manipulation; /* Отключает жесты масштабирования */
-    overscroll-behavior: contain;
-}
-html, body {
     height: 100%;
     margin: 0;
     padding: 0;
-    touch-action: none;
     overscroll-behavior: none;
     -webkit-overflow-scrolling: auto;
     overflow: hidden;
     touch-action: pan-x pan-y;
 }
+
+#app,
+#app * {
+    overscroll-behavior: none;
+}
+
 #app {
     overflow-y: auto;
     overflow-x: hidden;
     -webkit-overflow-scrolling: touch;
-    overscroll-behavior: contain;
+    overscroll-behavior: none;
     touch-action: pan-y;
     height: 100%;
     max-height: 100vh;
@@ -1410,6 +1411,48 @@ p.modal-subtext {
   overflow: visible;
 }
 
+.add-booking-date-time-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 30px;
+}
+
+.modal .add-booking-date {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.add-booking-time-field {
+  width: auto;
+  min-width: 0;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 0 8px;
+  border: 1px solid #cbd4d9;
+  border-radius: 5px;
+  background: #f5f7f8;
+  color: #34475a;
+  font-size: 9px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.add-booking-time-field.open,
+.add-booking-time-field:focus-visible {
+  border-color: #7b9aae;
+  box-shadow: 0 0 0 2px rgba(123, 154, 174, 0.18);
+}
+
+.add-booking-time-field svg {
+  flex: 0 0 auto;
+  color: #577c8e;
+}
+
 .add-entry-tabs {
   position: relative;
   display: grid;
@@ -1451,6 +1494,11 @@ p.modal-subtext {
   margin-top: 11px;
 }
 
+.add-entry-booking-form > .calendar-event-time-wheel {
+  margin-top: 0;
+  margin-bottom: 10px;
+}
+
 .add-entry-event-form {
   margin-top: 10px;
   padding-top: 0;
@@ -1468,23 +1516,6 @@ p.modal-subtext {
   overscroll-behavior-y: contain;
   scrollbar-width: thin;
   -webkit-overflow-scrolling: touch;
-}
-
-.add-booking-time-block {
-  display: grid;
-  gap: 5px;
-  margin-top: 9px;
-}
-
-.add-booking-time-label {
-  margin-left: 1px;
-  color: #526372;
-  font-size: 10px;
-  font-weight: 600;
-}
-
-.add-booking-time-field {
-  text-align: left;
 }
 
 .add-booking-time-field > span {

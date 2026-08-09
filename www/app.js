@@ -4440,7 +4440,21 @@ function renderAddBookingModal() {
     <div class="modal-overlay" data-action="overlay-click">
       <div class="modal add-booking-modal ${isEventTab ? "event-tab" : "booking-tab"}">
         <h3>Добавить запись</h3>
-        <p>${escapeHtml(d)}</p>
+        <div class="add-booking-date-time-row">
+          <p class="add-booking-date">${escapeHtml(d)}</p>
+          ${isEventTab
+            ? ""
+            : `<button type="button"
+                       class="add-booking-time-field ${state.modalTimeOpen ? "open" : ""}"
+                       data-action="toggle-add-booking-time"
+                       aria-expanded="${state.modalTimeOpen}"
+                       aria-label="Изменить время тренировки">
+                 <span>${escapeHtml(bookingTimeZoneSummary(startMinute))}</span>
+                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
+                   <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 8v4l2.5 1.5M21 12a9 9 0 1 1-9-9 9 9 0 0 1 9 9Z"></path>
+                 </svg>
+               </button>`}
+        </div>
 
         <div class="add-entry-tabs" role="tablist" aria-label="Тип записи">
           <button type="button"
@@ -4518,6 +4532,9 @@ function renderAddBookingModal() {
                </div>
              </div>`
           : `<div class="add-entry-booking-form">
+               ${state.modalTimeOpen
+                 ? renderCalendarEventTimeWheel("add-booking", startMinute)
+                 : ""}
                <div class="package-size-select booking-client-select">
                  <button type="button"
                          class="package-size-field booking-client-field ${state.modalClientDropdownOpen ? "open" : ""}"
@@ -4539,21 +4556,6 @@ function renderAddBookingModal() {
                            ${escapeHtml(client)}
                          </button>`).join("")}
                      </div>`
-                   : ""}
-               </div>
-               <div class="add-booking-time-block">
-                 <span class="add-booking-time-label">Время тренировки</span>
-                 <button type="button"
-                         class="calendar-event-time-field add-booking-time-field has-time ${state.modalTimeOpen ? "open" : ""}"
-                         data-action="toggle-add-booking-time"
-                         aria-expanded="${state.modalTimeOpen}">
-                   <span>${escapeHtml(bookingTimeZoneSummary(startMinute))}</span>
-                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
-                     <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 8v4l2.5 1.5M21 12a9 9 0 1 1-9-9 9 9 0 0 1 9 9Z"></path>
-                   </svg>
-                 </button>
-                 ${state.modalTimeOpen
-                   ? renderCalendarEventTimeWheel("add-booking", startMinute)
                    : ""}
                </div>
                <div class="modal-actions">
