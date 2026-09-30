@@ -254,6 +254,8 @@ confirm: {
 let currentPage = "calendar"; // текущая страница: "calendar" или "clients"
 let suppressBookingTapUntil = 0;
 let suppressClientDeleteClickUntil = 0;
+let calendarWeekTransitioning = false;
+let currentTimeIndicatorRevealTimer = null;
 const bookingTimeWheelScrollTimers = new WeakMap();
 
 // ---------- Инициализация ----------
@@ -411,6 +413,27 @@ let swipeZone = null;
 let activeSwipePointerId = null;
 let suppressSwipeClickUntil = 0;
 
+function beginCalendarWeekTransition() {
+  clearTimeout(currentTimeIndicatorRevealTimer);
+  currentTimeIndicatorRevealTimer = null;
+  calendarWeekTransitioning = true;
+
+  const indicator = document.querySelector(".calendar-current-time");
+  if (indicator) indicator.hidden = true;
+  document.querySelectorAll(".fixed-time-table tbody tr.current-time-row").forEach((row) => {
+    row.classList.remove("current-time-row");
+  });
+}
+
+function finishCalendarWeekTransition(delay = 0) {
+  clearTimeout(currentTimeIndicatorRevealTimer);
+  currentTimeIndicatorRevealTimer = setTimeout(() => {
+    calendarWeekTransitioning = false;
+    currentTimeIndicatorRevealTimer = null;
+    updateCurrentTimeIndicator();
+  }, delay);
+}
+
 function resetSwipeTracking() {
   swipeX = 0;
   swipeStartX = 0;
@@ -444,7 +467,10 @@ function completeCalendarWeekSwipe(zone, direction) {
     render();
 
     const newZone = document.querySelector(".calendar-scroll-inner");
-    if (!newZone) return;
+    if (!newZone) {
+      finishCalendarWeekTransition();
+      return;
+    }
 
     newZone.style.transition = "none";
     newZone.style.transform = direction === "next"
@@ -454,6 +480,7 @@ function completeCalendarWeekSwipe(zone, direction) {
     requestAnimationFrame(() => {
       newZone.style.transition = `transform ${SWIPE_ANIMATION_SPEED}s ${SWIPE_EASING}`;
       newZone.style.transform = "translateX(-33.333%)";
+      finishCalendarWeekTransition();
     });
   };
 
@@ -506,6 +533,7 @@ document.addEventListener("pointermove", (e) => {
       return;
     }
 
+    beginCalendarWeekTransition();
     suppressSwipeClickUntil = Date.now() + 600;
   }
 
@@ -539,6 +567,7 @@ document.addEventListener("pointerup", (e) => {
 
   if (!changedWeek) {
     snapCalendarWeekToCenter(zone);
+    finishCalendarWeekTransition(SWIPE_ANIMATION_SPEED * 1000 + 50);
     return;
   }
 
@@ -554,8 +583,12 @@ document.addEventListener("pointerup", (e) => {
 document.addEventListener("pointercancel", (e) => {
   if (e.pointerId !== activeSwipePointerId) return;
   const zone = swipeZone;
+  const axis = swipeAxis;
   resetSwipeTracking();
   snapCalendarWeekToCenter(zone);
+  if (axis === "horizontal") {
+    finishCalendarWeekTransition(SWIPE_ANIMATION_SPEED * 1000 + 50);
+  }
 }, { passive: true });
 
 document.addEventListener("click", (e) => {
@@ -1439,6 +1472,31 @@ function currentLocalDateISO() {
   return format(new Date(), "yyyy-MM-dd");
 }
 
+function dateISOInTimeZone(date, timeZone) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }).formatToParts(date).map((part) => [part.type, part.value])
+  );
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function minuteInTimeZone(date, timeZone) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      hourCycle: "h23",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit"
+    }).formatToParts(date).map((part) => [part.type, part.value])
+  );
+  return Number(parts.hour) * 60 + Number(parts.minute) + Number(parts.second) / 60;
+}
+
 function currentMonthStartISO() {
   const now = new Date();
   return format(new Date(now.getFullYear(), now.getMonth(), 1), "yyyy-MM-dd");
@@ -1974,6 +2032,9 @@ function render() {
       protectFreshModals();
     }
     updateFabVisibility();
+    if (currentPage === "calendar") {
+      requestAnimationFrame(() => updateCurrentTimeIndicator());
+    }
     if (state.bookingDetailsOpen && state.bookingMoveTimeOpen) {
       requestAnimationFrame(positionBookingTimeWheel);
     }
@@ -2295,9 +2356,86 @@ function renderTable(paymentAgendaByDate, eventAgendaByDate, hourMinutes) {
           </div>
         </div>
       </div>
+      <div class="calendar-current-time" aria-hidden="true" hidden>
+        <div class="calendar-current-time-values"></div>
+        <div class="calendar-current-time-line"></div>
+      </div>
     </div>
   `;
 }
+
+function updateCurrentTimeIndicator(now = new Date()) {
+  const container = document.querySelector(".app-calendar .calendar-container");
+  const indicator = container?.querySelector(".calendar-current-time");
+  const fixedTable = container?.querySelector(".fixed-time-table");
+  if (!container || !indicator || !fixedTable) return;
+
+  fixedTable.querySelectorAll("tbody tr.current-time-row").forEach((row) => {
+    row.classList.remove("current-time-row");
+  });
+
+  if (calendarWeekTransitioning) {
+    indicator.hidden = true;
+    return;
+  }
+
+  const columns = visibleTimeColumns();
+  const baseZoneId = timeSettings.yellow.zoneId;
+  const hourRows = [...fixedTable.querySelectorAll("tbody tr[data-minute]")];
+  if (!hourRows.length) {
+    indicator.hidden = true;
+    return;
+  }
+
+  const firstMinute = Number(hourRows[0].dataset.minute);
+  const lastMinute = Number(hourRows.at(-1).dataset.minute) + 60;
+  let currentMinute = minuteInTimeZone(now, baseZoneId);
+  let scheduleDateISO = dateISOInTimeZone(now, baseZoneId);
+
+  if (lastMinute > DAY_MINUTES && currentMinute < firstMinute) {
+    currentMinute += DAY_MINUTES;
+    scheduleDateISO = format(addDays(parseISO(scheduleDateISO), -1), "yyyy-MM-dd");
+  }
+
+  const { startISO, endISO } = visibleCalendarDateRange();
+  if (
+    scheduleDateISO < startISO ||
+    scheduleDateISO > endISO ||
+    currentMinute < firstMinute ||
+    currentMinute >= lastMinute
+  ) {
+    indicator.hidden = true;
+    return;
+  }
+
+  const rowMinute = Math.floor(currentMinute / 60) * 60;
+  const currentRow = fixedTable.querySelector(`tbody tr[data-minute="${rowMinute}"]`);
+  if (!currentRow) {
+    indicator.hidden = true;
+    return;
+  }
+
+  const containerRect = container.getBoundingClientRect();
+  const rowRect = currentRow.getBoundingClientRect();
+  const minuteProgress = (currentMinute - rowMinute) / 60;
+  const markerTop = rowRect.top - containerRect.top + rowRect.height * minuteProgress;
+  const valueContainer = indicator.querySelector(".calendar-current-time-values");
+
+  currentRow.classList.add("current-time-row");
+  indicator.style.top = `${markerTop}px`;
+  indicator.style.setProperty("--current-time-columns", String(columns.length));
+  valueContainer.innerHTML = columns.map((column) => {
+    const value = minuteInTimeZone(now, column.settings.zoneId);
+    return `<span>${escapeHtml(clockText(Math.floor(value)).replace(":", "."))}</span>`;
+  }).join("");
+  indicator.hidden = false;
+}
+
+const CURRENT_TIME_REFRESH_MS = 15000;
+setInterval(() => updateCurrentTimeIndicator(), CURRENT_TIME_REFRESH_MS);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) updateCurrentTimeIndicator();
+});
 
 function renderFixedTimes(
   hourMinutes,
@@ -2324,7 +2462,7 @@ function renderFixedTimes(
   html += `</tr></thead><tbody>`;
 
   hourMinutes.forEach((hourMinute) => {
-    html += `<tr class="calendar-hour-row">`;
+    html += `<tr class="calendar-hour-row" data-minute="${hourMinute}">`;
     columns.forEach((column) => {
       html += `
         <td class="${column.className} time-cell"
