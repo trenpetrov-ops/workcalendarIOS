@@ -12,7 +12,8 @@ import {
   where,
   getDocs,
   getDoc,
-  deleteField
+  deleteField,
+  writeBatch
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 
 
@@ -254,6 +255,7 @@ confirm: {
 let currentPage = "calendar"; // текущая страница: "calendar" или "clients"
 let suppressBookingTapUntil = 0;
 let suppressClientDeleteClickUntil = 0;
+let bookingCreatePending = false;
 let calendarWeekTransitioning = false;
 let currentTimeIndicatorRevealTimer = null;
 const bookingTimeWheelScrollTimers = new WeakMap();
@@ -656,7 +658,7 @@ function clearLongPressGesture() {
 
 function finishLongPressGesture() {
   if (longPressActivated) {
-    suppressLongPressClickUntil = Date.now() + 500;
+    suppressLongPressClickUntil = Date.now() + 160;
   }
   longPressActivated = false;
   clearLongPressGesture();
@@ -664,6 +666,10 @@ function finishLongPressGesture() {
 
 document.addEventListener("click", (e) => {
   if (Date.now() >= suppressLongPressClickUntil) return;
+  if (e.target instanceof Element && e.target.closest(".modal")) {
+    suppressLongPressClickUntil = 0;
+    return;
+  }
   suppressLongPressClickUntil = 0;
   e.preventDefault();
   e.stopImmediatePropagation();
@@ -1265,6 +1271,23 @@ function shortZoneLabel(setting) {
 
 function bookingSortValue(booking) {
   return bookingReferenceMinute(booking);
+}
+
+function comparePackageSessions(first, second) {
+  return (
+    String(first.dateISO || "").localeCompare(String(second.dateISO || "")) ||
+    bookingSortValue(first) - bookingSortValue(second) ||
+    String(first.id || "").localeCompare(String(second.id || ""))
+  );
+}
+
+function numberedPackageSessions(items) {
+  return [...items]
+    .sort(comparePackageSessions)
+    .map((booking, index) => ({
+      ...booking,
+      sessionNumber: index + 1
+    }));
 }
 
 function sharedClientGroups() {
@@ -2015,22 +2038,6 @@ function render() {
   }
 
   // ----вызов защиты модалки
-    if (
-      state.modalOpen ||
-      state.packageModalOpen ||
-      state.bookingDetailsOpen ||
-      state.supportDetailsOpen ||
-      state.supportDatesEditOpen ||
-      state.supportHistoryOpen ||
-      state.supportPaymentConfirmOpen ||
-      state.supportUndoConfirmOpen ||
-      state.calendarDayDetailsOpen ||
-      state.calendarEventDetailsOpen ||
-      state.confirm.open ||
-      state.timeSettingsModalOpen
-    ) {
-      protectFreshModals();
-    }
     updateFabVisibility();
     if (currentPage === "calendar") {
       requestAnimationFrame(() => updateCurrentTimeIndicator());
@@ -2054,29 +2061,6 @@ function render() {
     }
 
 }
-// --------------------- защита модалки
-
-function protectFreshModals() {
-  const overlays = document.querySelectorAll(".modal-overlay");
-  overlays.forEach((overlay) => {
-    if (overlay.dataset.protected) return; // уже обработали
-
-    overlay.dataset.protected = "1";
-    const modal = overlay.querySelector(".modal");
-
-    // временно блокируем любые тапы по модалке и оверлею
-    overlay.style.pointerEvents = "none";
-    if (modal) modal.style.pointerEvents = "none";
-
-    setTimeout(() => {
-      overlay.style.pointerEvents = "";
-      if (modal) modal.style.pointerEvents = "";
-    }, 220); // 0.22с — достаточно, чтобы палец успел отжаться
-  });
-}
-
-
-
 // === скрытие FAB во время модалок (решение бага iOS) ===
 function updateFabVisibility() {
   const fab = document.getElementById("fab-toggle");
@@ -4727,6 +4711,8 @@ function selectBookingClient(clientName) {
 }
 
 async function addBooking() {
+  if (bookingCreatePending) return;
+
   const name = (state.modalClient || "").trim();
   if (!name) {
     showToast("Выберите клиента.", "error");
@@ -4780,8 +4766,8 @@ async function addBooking() {
     return;
   }
 
-  // Добавляем новую бронь в Firestore
-  await addDoc(collection(db, "bookings"), {
+  const bookingRef = doc(collection(db, "bookings"));
+  const bookingData = {
     clientName: name,
     dateISO,
     hour: startMinute / 60,
@@ -4794,16 +4780,63 @@ async function addBooking() {
     ),
     timeZoneId: timeSettings.yellow.zoneId,
     packageId: targetPkg.id
-  });
+  };
+  const previousBookings = bookings;
+  const previousPackages = packages;
+  const sessions = numberedPackageSessions([
+    ...previousBookings.filter((booking) => booking.packageId === targetPkg.id),
+    { id: bookingRef.id, ...bookingData }
+  ]);
+  const optimisticBooking = sessions.find((booking) => booking.id === bookingRef.id);
 
-  // Теперь пересчитываем номера тренировок пакета
-  await reindexPackageSessions(targetPkg.id);
+  bookingCreatePending = true;
+  bookings = [
+    ...previousBookings.filter((booking) => booking.packageId !== targetPkg.id),
+    ...sessions
+  ];
+  packages = previousPackages.map((pkg) =>
+    pkg.id === targetPkg.id ? { ...pkg, used: sessions.length } : pkg
+  );
   state.modalOpen = false;
   state.modalClientDropdownOpen = false;
   state.modalTimeOpen = false;
   state.modalTab = "booking";
   resetCalendarEventComposer();
   render();
+
+  try {
+    const batch = writeBatch(db);
+    batch.set(bookingRef, {
+      ...bookingData,
+      sessionNumber: optimisticBooking.sessionNumber
+    });
+    sessions.forEach((booking) => {
+      if (booking.id === bookingRef.id) return;
+      batch.update(doc(db, "bookings", booking.id), {
+        sessionNumber: booking.sessionNumber
+      });
+    });
+    batch.update(doc(db, "packages", targetPkg.id), {
+      used: sessions.length
+    });
+    await batch.commit();
+    showToast("Запись добавлена.", "success");
+  } catch (err) {
+    console.error("Ошибка добавления записи:", err);
+    bookings = previousBookings;
+    packages = previousPackages;
+    state.modalOpen = true;
+    state.modalDateISO = dateISO;
+    state.modalMinute = startMinute;
+    state.modalClient = name;
+    state.modalClientDropdownOpen = false;
+    state.modalTimeOpen = false;
+    state.modalTab = "booking";
+    render();
+    showToast("Не удалось добавить запись. Попробуйте еще раз.", "error");
+  } finally {
+    bookingCreatePending = false;
+  }
 }
 
 function clockText(minute) {
@@ -5635,12 +5668,31 @@ function toggleSelectedBooking(id) {
   render();
 }
 
+function resetConfirmState() {
+  state.confirm = {
+    open: false,
+    title: "",
+    message: "",
+    type: null,
+    bookingId: null,
+    itemId: null,
+    deleteMode: "delete-all",
+    dropdownOpen: false,
+    pending: false
+  };
+}
+
 function openConfirmDeleteBooking(id) {
   state.confirm = {
     open: true,
     title: "Удалить запись?",
+    message: "",
     type: "booking",
-    bookingId: id
+    bookingId: id,
+    itemId: null,
+    deleteMode: "delete-all",
+    dropdownOpen: false,
+    pending: false
   };
   render();
 }
@@ -5805,18 +5857,14 @@ async function handleConfirmOk(e) {
 
   if (!id || !type) {
     console.warn("❌ confirm: нет id или типа", state.confirm);
-    state.confirm = {
-      open: false,
-      title: "",
-      message: "",
-      type: null,
-      bookingId: null,
-      itemId: null,
-      deleteMode: "delete-all",
-      dropdownOpen: false,
-      pending: false
-    };
+    resetConfirmState();
     render();
+    return;
+  }
+
+  if (type === "booking") {
+    resetConfirmState();
+    await deleteBookingAndReindex(id);
     return;
   }
 
@@ -5826,10 +5874,6 @@ async function handleConfirmOk(e) {
 
   try {
     switch (type) {
-      case "booking":
-        await deleteBookingAndReindex(id);
-        break;
-
       case "calendar-event": {
         const deleted = await deleteCalendarEvent(id);
         if (!deleted) {
@@ -5859,17 +5903,7 @@ async function handleConfirmOk(e) {
         break;
     }
 
-    state.confirm = {
-      open: false,
-      title: "",
-      message: "",
-      type: null,
-      bookingId: null,
-      itemId: null,
-      deleteMode: "delete-all",
-      dropdownOpen: false,
-      pending: false
-    };
+    resetConfirmState();
     render();
   } catch (err) {
     console.error("❌ Ошибка:", err);
@@ -5912,73 +5946,62 @@ async function requestRemoveClientForce(client, deleteMode = "delete-all") {
 
 // Пересчёт номеров после удаления
 async function deleteBookingAndReindex(id) {
-  console.log("🗑 Пытаюсь удалить бронь", id);
-
   const b = bookings.find((x) => x.id === id);
   if (!b) {
-    console.warn("⚠️ Бронь с таким id не найдена в локальном массиве", id);
-    return;
+    render();
+    showToast("Запись уже удалена.", "info");
+    return true;
   }
 
-  // 1. Удаляем саму бронь
-  try {
-    await deleteDoc(doc(db, "bookings", id));
-    console.log("✅ Бронь удалена из Firestore");
-  } catch (err) {
-    console.error("❌ Ошибка удаления брони:", err);
-    showToast("Ошибка удаления записи.", "error");
-    return;
-  }
-
-  // 2. Если у брони нет packageId — просто выходим
-  if (!b.packageId) {
-    console.log("ℹ️ У брони нет packageId — пересчёт пакета пропускаем");
-    return;
-  }
-
-  const packageRef = doc(db, "packages", b.packageId);
-  const packageSnap = await getDoc(packageRef);
-
-  // 3. Если пакет уже удалён → пересчёт НЕ делаем
-  if (!packageSnap.exists()) {
-    console.warn("⚠ Пакет уже удалён, пересчёт пропускаем:", b.packageId);
-    return;
-  }
-
-  // 4. Пересчитываем оставшиеся тренировки пакета
-  try {
-    const q = query(
-      collection(db, "bookings"),
-      where("packageId", "==", b.packageId)
-    );
-    const snap = await getDocs(q);
-
-    const remaining = snap.docs
-      .map((d) => ({ id: d.id, ...d.data() }))
-      .sort(
-        (a, c) =>
-          a.dateISO.localeCompare(c.dateISO) ||
-          bookingSortValue(a) - bookingSortValue(c)
-      );
-
-    // перенумеровываем сессии
-    await Promise.all(
-      remaining.map((item, idx) =>
-        updateDoc(doc(db, "bookings", item.id), {
-          sessionNumber: idx + 1
-        })
+  const previousBookings = bookings;
+  const previousPackages = packages;
+  const remainingPackageSessions = b.packageId
+    ? numberedPackageSessions(
+        previousBookings.filter(
+          (booking) => booking.id !== id && booking.packageId === b.packageId
+        )
       )
+    : [];
+  const numberedById = new Map(
+    remainingPackageSessions.map((booking) => [booking.id, booking])
+  );
+
+  bookings = previousBookings
+    .filter((booking) => booking.id !== id)
+    .map((booking) => numberedById.get(booking.id) || booking);
+  if (b.packageId) {
+    packages = previousPackages.map((pkg) =>
+      pkg.id === b.packageId
+        ? { ...pkg, used: remainingPackageSessions.length }
+        : pkg
     );
+  }
+  state.selectedBookingId = null;
+  render();
 
-    // обновляем used в пакете
-    await updateDoc(packageRef, {
-      used: remaining.length
+  try {
+    const batch = writeBatch(db);
+    batch.delete(doc(db, "bookings", id));
+    remainingPackageSessions.forEach((booking) => {
+      batch.update(doc(db, "bookings", booking.id), {
+        sessionNumber: booking.sessionNumber
+      });
     });
-
-    console.log("✅ Пересчёт пакета завершён");
+    if (b.packageId && previousPackages.some((pkg) => pkg.id === b.packageId)) {
+      batch.update(doc(db, "packages", b.packageId), {
+        used: remainingPackageSessions.length
+      });
+    }
+    await batch.commit();
+    showToast("Запись удалена.", "success");
+    return true;
   } catch (err) {
-    console.error("❌ Ошибка пересчёта пакета:", err);
-    // не падаем — запись уже удалена
+    console.error("Ошибка удаления записи:", err);
+    bookings = previousBookings;
+    packages = previousPackages;
+    render();
+    showToast("Не удалось удалить запись.", "error");
+    return false;
   }
 }
 
@@ -5986,27 +6009,21 @@ async function deleteBookingAndReindex(id) {
 
 
 async function reindexPackageSessions(packageId) {
-  // Получаем все брони пакета
   const q = query(collection(db, "bookings"), where("packageId", "==", packageId));
   const snap = await getDocs(q);
-  const sessions = snap.docs
-    .map((d) => ({ id: d.id, ...d.data() }))
-    .sort(
-      (a, b) =>
-        a.dateISO.localeCompare(b.dateISO) || bookingSortValue(a) - bookingSortValue(b)
-    );
-
-  // Присваиваем новые номера
-  await Promise.all(
-    sessions.map((item, idx) =>
-      updateDoc(doc(db, "bookings", item.id), { sessionNumber: idx + 1 })
-    )
+  const sessions = numberedPackageSessions(
+    snap.docs.map((bookingDoc) => ({ id: bookingDoc.id, ...bookingDoc.data() }))
   );
-
-  // Обновляем used в пакете
-  await updateDoc(doc(db, "packages", packageId), {
+  const batch = writeBatch(db);
+  sessions.forEach((booking) => {
+    batch.update(doc(db, "bookings", booking.id), {
+      sessionNumber: booking.sessionNumber
+    });
+  });
+  batch.update(doc(db, "packages", packageId), {
     used: sessions.length
   });
+  await batch.commit();
 }
 
 // ---------- Модал: добавление пакета ----------
@@ -6856,17 +6873,7 @@ document.addEventListener("click", async (e) => {
     case "confirm-cancel":
       if (state.confirm.pending) break;
       await haptic("rigid");
-      state.confirm = {
-        open: false,
-        title: "",
-        message: "",
-        type: null,
-        bookingId: null,
-        itemId: null,
-        deleteMode: "delete-all",
-        dropdownOpen: false,
-        pending: false
-      };
+      resetConfirmState();
       render();
       break;
 
@@ -7051,7 +7058,7 @@ document.addEventListener("click", async (e) => {
 
     // ----- SAVE BOOKING rigid -----
     case "save-booking":
-      await haptic("rigid");
+      void haptic("rigid");
       await addBooking();
       break;
 
